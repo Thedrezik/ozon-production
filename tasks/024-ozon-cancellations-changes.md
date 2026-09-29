@@ -2,8 +2,8 @@
 
 status: pending  
 complexity: MEDIUM/HIGH  
-recommended_model: GPT-5.6 Sol  
-reasoning: High
+recommended_model: GPT-6 Sol
+reasoning: Medium
 
 ## Goal
 

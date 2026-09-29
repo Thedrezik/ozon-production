@@ -1,6 +1,8 @@
 # Task 002 — Authentication and RBAC
 
 Complexity: HIGH
+recommended_model: GPT-6 Sol
+reasoning: Medium
 
 ## Goal
 

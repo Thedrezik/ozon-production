@@ -1,6 +1,8 @@
 # Task 003 — Mock Orders and Production Queue
 
 Complexity: MEDIUM/HIGH
+recommended_model: GPT-6 Sol
+reasoning: Medium
 
 ## Goal
 

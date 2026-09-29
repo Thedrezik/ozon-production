@@ -1,6 +1,8 @@
 # Task 001 — Project Bootstrap
 
 Complexity: HIGH
+recommended_model: GPT-6 Sol
+reasoning: Medium
 
 ## Goal
 

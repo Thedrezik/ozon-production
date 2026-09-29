@@ -2,8 +2,8 @@
 
 status: pending  
 complexity: LOW  
-recommended_model: GPT-5.6 Luna / Instant  
-reasoning: Low
+recommended_model: GPT-6 Luna
+reasoning: Medium
 
 ## Goal
 
