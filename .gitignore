@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+**/.venv/
+frontend/node_modules/
+frontend/dist/
+frontend/.npm-cache/
+*.pyc
+.coverage
+uploads/
+backups/

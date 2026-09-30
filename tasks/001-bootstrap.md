@@ -1,5 +1,7 @@
 # Task 001 — Project Bootstrap
 
+status: completed
+
 Complexity: HIGH
 recommended_model: GPT-6 Sol
 reasoning: Medium

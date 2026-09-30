@@ -1,59 +1,34 @@
 # PROJECT STATE
 
-Last updated: initial setup
+Last updated: 2026-09-30
 
 ## Completed
 
-- Created project repository
-- Added PRODUCT.md
-- Added AGENTS.md
-- Added STATE.md
-- Created tasks directory
+- Task 001 completed: architecture, FastAPI health/readiness, PostgreSQL/SQLAlchemy/Alembic, React mobile PWA, Mock Mode indicator, Caddy/Compose, environment template, README, and basic tests. Docker Compose build, startup, migration, database, and HTTP checks passed.
 
 ## Current
 
-Preparing project architecture and initial application skeleton.
-
-No production code has been implemented yet.
+- Task 001 complete. The local Compose stack is running for review.
 
 ## Next
 
-1. Complete task `001-bootstrap.md`
-2. Create architecture documentation
-3. Create backend skeleton
-4. Create frontend PWA skeleton
-5. Create PostgreSQL + Docker Compose environment
-6. Create Mock Mode
+- Task 002 is next but has not been started.
 
 ## Known Issues
 
-None.
+- None known for task 001.
 
 ## Ozon Integration
 
-Status: NOT CONNECTED
-
-Real Ozon API credentials must NOT be added yet.
-
-Development should initially use:
-
-`OZON_MOCK_MODE=true`
+- Not connected. `OZON_MOCK_MODE=true`; no real credentials or API calls.
 
 ## Deployment
 
-Status: NOT DEPLOYED
-
-Target environment:
-
-- Linux VPS
-- approximately 1 CPU
-- approximately 1 GB RAM
-- Docker Compose
-- Caddy
-- PostgreSQL
-- FastAPI
-- React PWA
+- Local Docker Desktop stack running. Production VPS not deployed.
 
 ## Last Tests
 
-Tests have not been created yet.
+- Backend: 4 pytest tests passed; Ruff passed.
+- Frontend: ESLint and TypeScript passed; Vite PWA build passed inside Docker.
+- Docker Compose build and up passed; PostgreSQL healthy and `SELECT 1` returned 1; Alembic current revision `0001_bootstrap`.
+- Through Caddy: frontend, `/api/health`, `/api/health/ready`, manifest, service worker, and icon returned HTTP 200. Readiness returned `ready`; health reported Mock Mode enabled.
