@@ -9,19 +9,20 @@ Last updated: 2026-09-30
 - Task 003: repeatable mock orders, production queue, assignments, internal status history, mobile task screens and SSE refresh.
 - Task 004: full production transitions, configurable status labels/order, stage timestamps and cycle-time data.
 - Task 005: comments with author/time, mentions-ready links, and unified order timeline for comments, statuses and assignments.
+- Task 006: production blockers, manager tasks, status restoration, timeline/audit and mobile problem actions.
 
 ## Current
 
-- Task 005 complete. Apply migration `0005_comments_timeline` before starting the updated API.
+- Task 006 complete. Apply migration `0006_blockers` before starting the updated API.
 
 ## Next
 
-- Task 005 (see task file).
+- Next task is not started.
 
 ## Known Issues
 
-- Docker is unavailable in this environment, so tasks 004–005 were not checked against the live PostgreSQL/Compose stack. SQLite migrations and model comparison passed.
-- The Problem button is a placeholder until the blockers task.
+- Docker is unavailable in this environment, so task 006 was not checked against PostgreSQL/Compose. SQLite migration and model comparison passed.
+- Photo upload infrastructure is not yet available; blocker responses reserve a `photos` field.
 
 ## Ozon Integration
 
@@ -33,5 +34,5 @@ Last updated: 2026-09-30
 
 ## Last Tests
 
-- Backend: 16 pytest tests passed; Ruff passed; SQLite Alembic upgrade and `alembic check` passed.
+- Backend: 17 pytest tests passed; Ruff passed; SQLite Alembic upgrade and `alembic check` passed.
 - Frontend: ESLint, TypeScript and Vite PWA build passed using `--configLoader runner`.

@@ -11,6 +11,7 @@ from app.auth import Current, Db, require
 from app.models import (
     Assignment,
     AuditLog,
+    Blocker,
     Comment,
     CommentMention,
     InternalStatus,
@@ -269,6 +270,13 @@ def change_status(order_id: int, payload: StatusInput, db: Db, request: Request,
     order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if order is None:
         raise HTTPException(404, "Order not found")
+    if payload.status == "BLOCKED":
+        raise HTTPException(409, "Create a blocker to mark an order blocked")
+    if order.internal_status == "BLOCKED" and payload.status != "CANCELLED":
+        active = db.scalar(select(Blocker.id).where(Blocker.order_id == order_id,
+                                                    Blocker.status.in_(("OPEN", "IN_PROGRESS"))).limit(1))
+        if active is not None:
+            raise HTTPException(409, "Resolve active blockers first")
     if "orders.assign" not in user_permissions(actor):
         assigned_id = db.scalar(select(Assignment.user_id).where(Assignment.order_id == order_id))
         if assigned_id != actor.id:

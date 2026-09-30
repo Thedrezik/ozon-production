@@ -175,3 +175,50 @@ class OrderTimelineEvent(Base):
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     actor: Mapped[User | None] = relationship()
+
+
+class BlockerType(Base):
+    __tablename__ = "blocker_types"
+
+    code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+
+class Blocker(Base):
+    __tablename__ = "blockers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    type_code: Mapped[str] = mapped_column(ForeignKey("blocker_types.code"), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    creator_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    assigned_to: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    expected_resolution_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    previous_production_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    order: Mapped[Order] = relationship()
+    creator: Mapped[User | None] = relationship(foreign_keys=[creator_user_id])
+    assignee: Mapped[User | None] = relationship(foreign_keys=[assigned_to])
+
+
+class ManagerTask(Base):
+    __tablename__ = "manager_tasks"
+    __table_args__ = (UniqueConstraint("source_type", "source_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(240), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    assigned_to: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    order: Mapped[Order] = relationship()
