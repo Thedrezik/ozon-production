@@ -26,13 +26,13 @@ async function request<T>(path: string, options: RequestInit = {}, csrf?: string
   return response.json() as Promise<T>
 }
 
-export function ManagerTasks({ current }: { current: Current }) {
+export function ManagerTasks({ current, initialStatus = 'OPEN' }: { current: Current; initialStatus?: string }) {
   const [items, setItems] = useState<Task[]>([])
   const [people, setPeople] = useState<Assignee[]>([])
   const [severity, setSeverity] = useState('')
   const [source, setSource] = useState('')
   const [assignee, setAssignee] = useState('')
-  const [status, setStatus] = useState('OPEN')
+  const [status, setStatus] = useState(initialStatus)
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
   const [notice, setNotice] = useState('')
@@ -71,7 +71,7 @@ export function ManagerTasks({ current }: { current: Current }) {
 
   return <section className="space-y-4"><h2 className="text-xl font-semibold">Задачи руководителя</h2>
     <div className="grid gap-2 rounded-2xl bg-white p-4 sm:grid-cols-2">
-      <label className="text-sm">Статус<select aria-label="Статус задачи" value={status} onChange={e => { setStatus(e.target.value); setOffset(0) }} className="mt-1 w-full rounded-lg border p-3"><option value="">Все</option>{Object.entries(statusNames).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select></label>
+      <label className="text-sm">Статус<select aria-label="Статус задачи" value={status} onChange={e => { setStatus(e.target.value); setOffset(0) }} className="mt-1 w-full rounded-lg border p-3"><option value="">Все</option><option value="ACTIVE">Активные</option>{Object.entries(statusNames).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select></label>
       <label className="text-sm">Важность<select aria-label="Важность задачи" value={severity} onChange={e => { setSeverity(e.target.value); setOffset(0) }} className="mt-1 w-full rounded-lg border p-3"><option value="">Любая</option>{Object.entries(severityNames).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select></label>
       <label className="text-sm">Причина<select aria-label="Причина задачи" value={source} onChange={e => { setSource(e.target.value); setOffset(0) }} className="mt-1 w-full rounded-lg border p-3"><option value="">Любая</option>{sources.map(key => <option key={key} value={key}>{sourceNames[key]}</option>)}</select></label>
       <label className="text-sm">Ответственный<select aria-label="Ответственный за задачу" value={assignee} onChange={e => { setAssignee(e.target.value); setOffset(0) }} className="mt-1 w-full rounded-lg border p-3"><option value="">Все</option>{people.map(person => <option key={person.id} value={person.id}>{person.display_name}</option>)}</select></label>

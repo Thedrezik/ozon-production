@@ -16,10 +16,11 @@ Last updated: 2026-09-30
 - Task 010: explainable production priority, confirmed tariff and value inputs, feasibility, blocked flag, audited manual override/pin, configurable weights, and ranked queue.
 - Task 011: normalized tariff timeline, current/next step and signed Decimal financial effect, mock scenario, queue display and finance permission filtering.
 - Task 012: Money at Risk totals by configurable local-time buckets, category split, finance-only paginated order drill-down, and conservative handling of unknown tariff costs.
+- Task 013: manager dashboard with risk, urgent order and task counts, attention list, staff workload, and filtered drill-downs.
 
 ## Current
 
-- Task 012 complete. Apply migration `0011_tariff_engine` before starting the updated API; task 012 adds no migration.
+- Task 013 complete. Apply migration `0011_tariff_engine` before starting the updated API; task 013 adds no migration.
 
 ## Next
 
@@ -27,8 +28,8 @@ Last updated: 2026-09-30
 
 ## Known Issues
 
-- Docker is unavailable in this environment, so task 012 could not be checked against PostgreSQL/Compose.
-- Browser mock smoke reached the new navigation but the in-app browser did not retain the local test session cookie, so the dashboard could not be visually verified after login. Its mock API drill-down passed through TestClient.
+- Docker is unavailable in this environment, so task 013 could not be checked against PostgreSQL/Compose.
+- Browser UI smoke was not completed; mock dashboard API and filtered counts passed through TestClient.
 - Real Ozon tariff mapping remains pending official field/semantics verification during integration. No money at risk is inferred from order value or rates alone.
 - Photo upload infrastructure is not yet available; blocker responses reserve a `photos` field.
 - Rules for sources beyond blockers and overdue procurement have a deduplicating rule boundary but await their source data and integrations.
@@ -43,6 +44,6 @@ Last updated: 2026-09-30
 
 ## Last Tests
 
-- Backend: 43 pytest tests passed; Ruff passed (SQLite test database).
+- Backend: 44 pytest tests passed; Ruff passed (SQLite test database).
 - Frontend: ESLint, TypeScript and Vite PWA build passed using `--configLoader runner`.
 - UI: local mock build opened; authenticated screen review was limited by in-app browser cookie handling.

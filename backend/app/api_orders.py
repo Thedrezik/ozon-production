@@ -181,10 +181,13 @@ def list_orders(
     db: Db, _actor: Annotated[User, Depends(require("orders.view"))],
     status: str | None = None, assigned_user_id: int | None = None,
     blocked: bool | None = None, ready: bool | None = None, overdue: bool | None = None,
+    priority_level: str | None = None,
     limit: int = 20, offset: int = 0,
 ) -> dict:
     if status is not None and status not in STATUSES:
         raise HTTPException(422, "Unknown status")
+    if priority_level is not None and priority_level not in ("P0", "P1", "P2", "P3"):
+        raise HTTPException(422, "Unknown priority level")
     if not 1 <= limit <= 100 or offset < 0:
         raise HTTPException(422, "Invalid pagination")
     query = select(Order)
@@ -200,6 +203,8 @@ def list_orders(
         active = Order.internal_status.notin_(("DONE", "CANCELLED"))
         query = query.where((Order.shipment_deadline < utc_now()) & active if overdue else
                             (Order.shipment_deadline >= utc_now()) | ~active)
+    if priority_level is not None:
+        query = query.where(Order.internal_status.notin_(("DONE", "CANCELLED", "HANDED_TO_SHIPPING")))
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     ids = db.scalars(query.with_only_columns(Order.id)).all()
     if not ids:
@@ -209,6 +214,9 @@ def list_orders(
     settings = priority_settings(db)
     now = utc_now()
     ranked = [(order, priority_for(order, profile_map, settings, now)) for order in orders]
+    if priority_level is not None:
+        ranked = [pair for pair in ranked if pair[1]["level"] == priority_level]
+        total = len(ranked)
     ranked.sort(key=lambda pair: sort_key(pair[1], pair[0].id))
     can_view_finance = "finance.view" in user_permissions(_actor)
     def visible_priority(priority):

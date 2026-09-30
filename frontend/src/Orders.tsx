@@ -66,10 +66,10 @@ function OrderTimeline({ orderId, current }: { orderId: number; current: User })
   </details>
 }
 
-export function Orders({ current, mine }: { current: User; mine: boolean }) {
+export function Orders({ current, mine, initialFilter = '' }: { current: User; mine: boolean; initialFilter?: string }) {
   const [page, setPage] = useState<Page>({ items: [], total: 0 })
   const [status, setStatus] = useState('')
-  const [special, setSpecial] = useState('')
+  const [special, setSpecial] = useState(initialFilter)
   const [offset, setOffset] = useState(0)
   const [busy, setBusy] = useState<number | null>(null)
   const [error, setError] = useState('')
@@ -87,7 +87,8 @@ export function Orders({ current, mine }: { current: User; mine: boolean }) {
     const params = new URLSearchParams({ limit: '20', offset: String(offset) })
     if (mine) params.set('assigned_user_id', String(current.id))
     if (status) params.set('status', status)
-    if (special) params.set(special, 'true')
+    if (special.startsWith('assigned_user_id:')) params.set('assigned_user_id', special.split(':')[1])
+    else if (special) params.set(special, special === 'priority_level' ? 'P0' : 'true')
     try { setPage(await request<Page>(`/orders?${params}`)); const result = await request<{ items: Blocker[] }>('/blockers?limit=100'); setBlockers(result.items); setError('') }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось загрузить очередь') }
   }, [mine, current.id, offset, status, special])
@@ -200,7 +201,7 @@ export function Orders({ current, mine }: { current: User; mine: boolean }) {
 
   return <section className="space-y-4"><div className="flex items-center justify-between"><h2 className="text-2xl font-bold">{mine ? 'Мои задачи' : 'Очередь'}</h2><button onClick={() => void refresh()} className="rounded-xl border bg-white px-4 py-3">Обновить</button></div>
     <div className="grid grid-cols-2 gap-2"><label className="text-sm">Статус<select value={status} onChange={event => { setStatus(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3"><option value="">Все</option>{statuses.map(entry => <option value={entry.code} key={entry.code}>{entry.display_name}</option>)}</select></label>
-      <label className="text-sm">Показать<select value={special} onChange={event => { setSpecial(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3"><option value="">Все</option><option value="blocked">Проблемы</option><option value="ready">Готовые</option><option value="overdue">Просроченные</option></select></label></div>
+      <label className="text-sm">Показать<select value={special} onChange={event => { setSpecial(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3"><option value="">Все</option>{special.startsWith('assigned_user_id:') && <option value={special}>Сотрудник</option>}<option value="priority_level">Критические</option><option value="blocked">Проблемы</option><option value="ready">Готовые</option><option value="overdue">Просроченные</option></select></label></div>
     {current.permissions.includes('settings.manage') && <details className="rounded-xl bg-white p-3"><summary>Настроить статусы</summary><div className="mt-2 grid gap-2">{statuses.map(entry => <button key={entry.code} onClick={() => void editStatus(entry)} className="rounded border p-2 text-left">{entry.display_name} ({entry.code}) · {entry.sort_order}</button>)}</div></details>}
     {current.permissions.includes('settings.manage') && prioritySettings && <details className="rounded-xl bg-white p-3"><summary>Настроить приоритет</summary><form onSubmit={event => void savePrioritySettings(event)} className="mt-3 grid gap-3 sm:grid-cols-2">{([
       ['deadline_weight', 'Срок отгрузки, %'], ['tariff_weight', 'Срок тарифа, %'], ['finance_weight', 'Денежный эффект и стоимость, %'], ['feasibility_weight', 'Возможность успеть, %'], ['high_impact_rub', 'Высокий эффект тарифа, ₽'], ['high_value_rub', 'Высокая стоимость заказа, ₽'],

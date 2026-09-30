@@ -21,9 +21,9 @@ async function get<T>(path: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export function MoneyAtRisk() {
+export function MoneyAtRisk({ initialBucket = '' }: { initialBucket?: string }) {
   const [summary, setSummary] = useState<Summary | null>(null)
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(initialBucket || null)
   const [category, setCategory] = useState('')
   const [offset, setOffset] = useState(0)
   const [orders, setOrders] = useState<OrderPage | null>(null)

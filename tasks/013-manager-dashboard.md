@@ -1,6 +1,6 @@
 # Task 013 — Manager Dashboard
 
-status: pending  
+status: completed
 complexity: MEDIUM  
 recommended_model: GPT-6 Sol
 reasoning: Low
@@ -49,12 +49,12 @@ reasoning: Low
 
 ## Acceptance Criteria
 
-- [ ] Dashboard загружается без N+1 проблем.
-- [ ] Money at Risk отображается.
-- [ ] Manager Tasks видны.
-- [ ] Критические карточки кликабельны.
-- [ ] Фильтры открываются с правильными параметрами.
-- [ ] STATE.md обновлён.
+- [x] Dashboard загружается без N+1 проблем.
+- [x] Money at Risk отображается.
+- [x] Manager Tasks видны.
+- [x] Критические карточки кликабельны.
+- [x] Фильтры открываются с правильными параметрами.
+- [x] STATE.md обновлён.
 
 ## Completion
 

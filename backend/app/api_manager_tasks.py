@@ -32,7 +32,7 @@ def list_tasks(db: Db, _actor: Annotated[User, Depends(require("manager_tasks.vi
                limit: int = 50, offset: int = 0) -> dict:
     if ((severity is not None and severity not in SEVERITIES)
             or (source_type is not None and source_type not in SOURCE_TYPES)
-            or (status is not None and status not in STATUSES)
+            or (status is not None and status not in (*STATUSES, "ACTIVE"))
             or not 1 <= limit <= 100 or offset < 0):
         raise HTTPException(422, "Invalid filter")
     sync_all_overdue(db)
@@ -44,7 +44,9 @@ def list_tasks(db: Db, _actor: Annotated[User, Depends(require("manager_tasks.vi
         query = query.where(ManagerTask.source_type == source_type)
     if assigned_to is not None:
         query = query.where(ManagerTask.assigned_to == assigned_to)
-    if status:
+    if status == "ACTIVE":
+        query = query.where(ManagerTask.status.in_(ACTIVE_STATUSES))
+    elif status:
         query = query.where(ManagerTask.status == status)
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = db.scalars(query.options(joinedload(ManagerTask.order), joinedload(ManagerTask.assignee))
