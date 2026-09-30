@@ -1,5 +1,7 @@
 # Task 002 — Authentication and RBAC
 
+Status: completed
+
 Complexity: HIGH
 recommended_model: GPT-6 Sol
 reasoning: Medium
@@ -185,15 +187,15 @@ Architecture должна позволять позже добавить invite/
 
 ## Acceptance Criteria
 
-- [ ] admin можно создать CLI командой
-- [ ] пользователь может войти
-- [ ] пользователь может выйти
-- [ ] `/me` работает
-- [ ] inactive user не получает доступ
-- [ ] permissions проверяются backend
-- [ ] admin может создать пользователя
-- [ ] admin может назначить роль
-- [ ] обычный worker не получает admin permissions
-- [ ] audit записывает важные изменения
-- [ ] tests проходят
-- [ ] STATE.md обновлён
+- [x] admin можно создать CLI командой
+- [x] пользователь может войти
+- [x] пользователь может выйти
+- [x] `/me` работает
+- [x] inactive user не получает доступ
+- [x] permissions проверяются backend
+- [x] admin может создать пользователя
+- [x] admin может назначить роль
+- [x] обычный worker не получает admin permissions
+- [x] audit записывает важные изменения
+- [x] tests проходят
+- [x] STATE.md обновлён

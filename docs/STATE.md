@@ -4,31 +4,30 @@ Last updated: 2026-09-30
 
 ## Completed
 
-- Task 001 completed: architecture, FastAPI health/readiness, PostgreSQL/SQLAlchemy/Alembic, React mobile PWA, Mock Mode indicator, Caddy/Compose, environment template, README, and basic tests. Docker Compose build, startup, migration, database, and HTTP checks passed.
+- Task 001: application bootstrap, database, PWA and local Compose checks.
+- Task 002: users, roles, permissions, sessions, admin bootstrap, audit log, login limiter, and frontend login/user management.
 
 ## Current
 
-- Task 001 complete. The local Compose stack is running for review.
+- Task 002 complete. Existing local Compose stack needs rebuild and migration before the new auth UI is available.
 
 ## Next
 
-- Task 002 is next but has not been started.
+- Task 003 has not been started.
 
 ## Known Issues
 
-- None known for task 001.
+- No live PostgreSQL/Compose validation for task 002 in this environment. SQLite migration and automated tests passed.
 
 ## Ozon Integration
 
-- Not connected. `OZON_MOCK_MODE=true`; no real credentials or API calls.
+- Not connected. Mock Mode remains enabled; no real Ozon credentials or API calls.
 
 ## Deployment
 
-- Local Docker Desktop stack running. Production VPS not deployed.
+- Production VPS not deployed. Apply `alembic upgrade head`, then create the first admin with `python -m app.cli create-admin`.
 
 ## Last Tests
 
-- Backend: 4 pytest tests passed; Ruff passed.
-- Frontend: ESLint and TypeScript passed; Vite PWA build passed inside Docker.
-- Docker Compose build and up passed; PostgreSQL healthy and `SELECT 1` returned 1; Alembic current revision `0001_bootstrap`.
-- Through Caddy: frontend, `/api/health`, `/api/health/ready`, manifest, service worker, and icon returned HTTP 200. Readiness returned `ready`; health reported Mock Mode enabled.
+- Backend: 12 pytest tests passed; Ruff passed; SQLite Alembic upgrade reached `0002_auth_rbac` and seeded 7 roles.
+- Frontend: ESLint and TypeScript passed; Vite PWA build passed using `--configLoader runner`.

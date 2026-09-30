@@ -1,6 +1,6 @@
 # Ozon Production
 
-Task 001 bootstrap of a mobile-first production management system. This version provides a status screen, a FastAPI health API, PostgreSQL wiring, Alembic, and Mock Mode flag. Orders, authentication, and real Ozon integration come in later tasks.
+Mobile-first production management system. The current version includes authentication, users, backend RBAC, audit events, and Mock Mode. Orders and real Ozon integration come in later tasks.
 
 ## Configure and run
 
@@ -11,10 +11,11 @@ cp .env.example .env
 docker compose build
 docker compose up -d
 docker compose exec backend alembic upgrade head
+docker compose exec -it backend python -m app.cli create-admin
 docker compose ps
 ```
 
-Open `http://localhost` locally (or `https://your-domain` in production). The UI reports backend state and Mock Mode. `GET /api/health` checks the API process; `GET /api/health/ready` checks database connectivity. API docs are available at `/docs` on the backend container during development; they are not exposed through Caddy in this bootstrap.
+Open `http://localhost` locally (or `https://your-domain` in production) and sign in with the admin account. The CLI prompts for a password without displaying it. `GET /api/health` checks the API process; `GET /api/health/ready` checks database connectivity. API docs are available at `/docs` on the backend container during development; they are not exposed through Caddy.
 
 ```sh
 docker compose logs -f backend caddy postgres
@@ -45,6 +46,6 @@ npm run typecheck
 npm run build
 ```
 
-On Windows use `.venv\Scripts\python`, `.venv\Scripts\uvicorn`, `.venv\Scripts\pytest`, and `.venv\Scripts\ruff` instead of `./.venv/bin/...`. For a production migration use `docker compose exec backend alembic upgrade head`. The initial revision establishes migration history and deliberately creates no business tables.
+On Windows use `.venv\Scripts\python`, `.venv\Scripts\uvicorn`, `.venv\Scripts\pytest`, and `.venv\Scripts\ruff` instead of `./.venv/bin/...`. The `0002_auth_rbac` migration adds user, role, permission, session, and audit tables. Set `APP_ENV=production` when serving over HTTPS so session cookies have the Secure flag. For local HTTP use `APP_ENV=development`. Use `npm run build -- --configLoader runner` on Windows if Vite's default config loader cannot access the project path.
 
 Architecture and operational boundaries are described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). No real Ozon credentials are needed or used by this bootstrap.

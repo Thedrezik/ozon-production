@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.api_auth import router as auth_router
 from app.config import Settings, get_settings
 from app.database import create_db_engine, database_is_ready
 from app.logging import configure_logging
@@ -23,6 +24,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Ozon Production API", lifespan=lifespan)
     app.state.engine = engine
+    app.state.secure_cookies = config.app_env == "production"
+    app.include_router(auth_router)
 
     @app.get("/api/health")
     def health() -> dict[str, str | bool]:
