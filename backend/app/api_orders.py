@@ -3,12 +3,21 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.auth import Current, Db, require
-from app.models import Assignment, AuditLog, Order, Role, StatusHistory, User, utc_now
+from app.models import (
+    Assignment,
+    AuditLog,
+    InternalStatus,
+    Order,
+    Role,
+    StatusHistory,
+    User,
+    utc_now,
+)
 from app.orders import STATUSES, transition
 from app.rbac import user_permissions
 
@@ -16,7 +25,12 @@ router = APIRouter(prefix="/api/orders")
 
 
 class StatusInput(BaseModel):
-    status: Literal["NEW", "QUEUED", "SENT_TO_PRODUCTION", "IN_PRODUCTION", "BLOCKED", "PRODUCED", "PACKING", "READY_TO_SHIP", "DONE", "CANCELLED"]
+    status: Literal["NEW", "QUEUED", "SENT_TO_PRODUCTION", "IN_PRODUCTION", "BLOCKED", "PRODUCED", "QUALITY_CHECK", "PACKING", "READY_TO_SHIP", "HANDED_TO_SHIPPING", "DONE", "CANCELLED"]
+
+
+class StatusSettingsInput(BaseModel):
+    display_name: str = Field(min_length=1, max_length=80)
+    sort_order: int = Field(ge=0, le=1000)
 
 
 class AssignmentInput(BaseModel):
@@ -31,12 +45,40 @@ def order_data(order: Order) -> dict:
     return {
         "id": order.id, "posting_number": order.posting_number,
         "ozon_status": order.ozon_status, "internal_status": order.internal_status,
+        "production_started_at": order.production_started_at,
+        "production_completed_at": order.production_completed_at,
+        "packing_started_at": order.packing_started_at,
+        "ready_to_ship_at": order.ready_to_ship_at,
+        "handed_to_shipping_at": order.handed_to_shipping_at,
+        "done_at": order.done_at,
         "shipment_deadline": order.shipment_deadline, "items": [
             {"product_name": item.product_name, "quantity": item.quantity} for item in order.items
         ],
         "assigned_user": ({"id": order.assignment.user.id, "display_name": order.assignment.user.display_name}
                           if order.assignment else None),
     }
+
+
+@router.get("/statuses")
+def list_statuses(db: Db, _actor: Annotated[User, Depends(require("orders.view"))]) -> list[dict]:
+    rows = db.scalars(select(InternalStatus).order_by(InternalStatus.sort_order, InternalStatus.name)).all()
+    return [{"code": row.name, "display_name": row.display_name, "sort_order": row.sort_order} for row in rows]
+
+
+@router.put("/statuses/{code}")
+def update_status(code: str, payload: StatusSettingsInput, db: Db, request: Request,
+                  actor: Annotated[User, Depends(require("settings.manage"))]) -> dict:
+    row = db.get(InternalStatus, code)
+    if row is None:
+        raise HTTPException(404, "Status not found")
+    row.display_name = payload.display_name.strip()
+    if not row.display_name:
+        raise HTTPException(422, "Display name cannot be blank")
+    row.sort_order = payload.sort_order
+    db.add(AuditLog(actor_user_id=actor.id, action="status.settings_changed", detail=code))
+    db.commit()
+    request.app.state.order_events.publish(0)
+    return {"code": row.name, "display_name": row.display_name, "sort_order": row.sort_order}
 
 
 @router.get("")

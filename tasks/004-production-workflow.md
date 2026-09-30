@@ -1,6 +1,6 @@
 # Task 004 — Production Workflow
 
-status: pending  
+status: completed  
 complexity: MEDIUM  
 recommended_model: GPT-6 Sol
 reasoning: Low
@@ -51,13 +51,13 @@ Ozon status и внутренний production status должны остава�
 
 ## Acceptance Criteria
 
-- [ ] Корректные переходы работают.
-- [ ] Некорректные переходы отклоняются backend.
-- [ ] История статусов сохраняется.
-- [ ] Несколько пользователей видят актуальный статус.
-- [ ] Ozon status не изменяется при изменении production status.
-- [ ] Tests проходят.
-- [ ] STATE.md обновлён.
+- [x] Корректные переходы работают.
+- [x] Некорректные переходы отклоняются backend.
+- [x] История статусов сохраняется.
+- [x] Несколько пользователей видят актуальный статус.
+- [x] Ozon status не изменяется при изменении production status.
+- [x] Tests проходят.
+- [x] STATE.md обновлён.
 
 ## Completion
 

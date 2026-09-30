@@ -93,6 +93,12 @@ class Order(Base):
     shipment_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     is_mock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    production_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    production_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    packing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ready_to_ship_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    handed_to_shipping_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
     assignment: Mapped["Assignment | None"] = relationship(back_populates="order", uselist=False, cascade="all, delete-orphan")
 
@@ -111,6 +117,8 @@ class InternalStatus(Base):
     __tablename__ = "internal_statuses"
 
     name: Mapped[str] = mapped_column(String(40), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class StatusHistory(Base):

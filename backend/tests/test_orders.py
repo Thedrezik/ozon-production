@@ -72,15 +72,27 @@ def test_queue_filters_assignment_permissions_and_history(tmp_path):
             assert worker.post(f"/api/orders/{order_id}/status", headers=worker_headers, json={"status": "READY_TO_SHIP"}).status_code == 409
             assert worker.post(f"/api/orders/{order_id}/status", headers=worker_headers, json={"status": "IN_PRODUCTION"}).status_code == 200
             assert worker.post(f"/api/orders/{order_id}/status", headers=worker_headers, json={"status": "PRODUCED"}).status_code == 200
+            assert worker.post(f"/api/orders/{order_id}/status", headers=worker_headers, json={"status": "PACKING"}).status_code == 409
+            assert worker.post(f"/api/orders/{order_id}/status", headers=worker_headers, json={"status": "QUALITY_CHECK"}).status_code == 200
             assert worker.post(f"/api/orders/{order_id}/status", headers=worker_headers, json={"status": "PACKING"}).status_code == 200
             assert worker.post(f"/api/orders/{order_id}/status", headers=worker_headers, json={"status": "READY_TO_SHIP"}).status_code == 200
             history = worker.get(f"/api/orders/{order_id}/history").json()
-            assert [row["new_status"] for row in history][-4:] == ["IN_PRODUCTION", "PRODUCED", "PACKING", "READY_TO_SHIP"]
-            assert all(row["changed_by"] == worker_id for row in history[-4:])
+            assert [row["new_status"] for row in history][-5:] == ["IN_PRODUCTION", "PRODUCED", "QUALITY_CHECK", "PACKING", "READY_TO_SHIP"]
+            assert all(row["changed_by"] == worker_id for row in history[-5:])
+            current = worker.get("/api/orders?status=READY_TO_SHIP").json()["items"]
+            updated = next(item for item in current if item["id"] == order_id)
+            assert updated["ozon_status"] == order["ozon_status"]
+            assert updated["production_started_at"] and updated["production_completed_at"]
+            assert updated["packing_started_at"] and updated["ready_to_ship_at"]
         with TestClient(app) as viewer:
             viewer_headers = login(viewer, "viewer", "viewer-password-123")
             assert viewer.get("/api/orders").status_code == 200
             assert viewer.post(f"/api/orders/{order_id}/claim", headers=viewer_headers).status_code == 403
+            assert viewer.put("/api/orders/statuses/QUEUED", headers=viewer_headers, json={"display_name": "Test", "sort_order": 2}).status_code == 403
+        assert admin.put("/api/orders/statuses/QUEUED", headers=headers, json={"display_name": "В работе", "sort_order": 7}).status_code == 200
+        assert any(row["display_name"] == "В работе" for row in admin.get("/api/orders/statuses").json())
+        assert admin.post(f"/api/orders/{order_id}/status", headers=headers, json={"status": "HANDED_TO_SHIPPING"}).status_code == 200
+        assert admin.post(f"/api/orders/{order_id}/status", headers=headers, json={"status": "DONE"}).status_code == 200
         with Session(app.state.engine) as db:
             assert db.scalar(select(Assignment.user_id).where(Assignment.order_id == order_id)) == worker_id
             assert db.scalar(select(User.id).where(User.username == "worker")) == worker_id
