@@ -47,3 +47,7 @@ Calculate the dashboard from the normalized tariff timeline and existing priorit
 ## 013 — Queue search and transactional bulk actions
 
 Keep queue search and filters on the existing orders endpoint, calculate priority via the existing Priority Engine before pagination, and use the existing status transition service for bulk status changes. Bulk mutations validate every selected order before applying any change, enforce existing RBAC permissions, write per-order timeline/history where applicable, and add one audit record per bulk operation. Store nullable Ozon order number and warehouse identifiers for filtering when integration data becomes available; do not infer them from unrelated fields.
+
+## 016 — Shared SSE invalidation and API refresh
+
+Reuse the single-worker in-process order event bus as an invalidation signal for all active operational screens. Publish after commit so another browser reads committed data. The browser owns one EventSource per signed-in session; its automatic reconnect triggers an API refresh, as do focus, online and a 60-second timer. SSE carries no authoritative state or replay log. This fits the single-instance deployment and recovers missed events through normal API reads without Redis or a new table.

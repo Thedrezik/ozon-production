@@ -66,7 +66,7 @@ function OrderTimeline({ orderId, current }: { orderId: number; current: User })
   </details>
 }
 
-export function Orders({ current, mine, initialFilter = '' }: { current: User; mine: boolean; initialFilter?: string }) {
+export function Orders({ current, mine, initialFilter = '', refreshToken = 0 }: { current: User; mine: boolean; initialFilter?: string; refreshToken?: number }) {
   const [page, setPage] = useState<Page>({ items: [], total: 0 })
   const [status, setStatus] = useState('')
   const [priorityLevel, setPriorityLevel] = useState('')
@@ -106,7 +106,7 @@ export function Orders({ current, mine, initialFilter = '' }: { current: User; m
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось загрузить очередь') }
   }, [mine, current.id, offset, status, priorityLevel, special, search, ozonStatus, product, warehouse])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { void refresh() }, [refresh, refreshToken])
   const refreshStatuses = useCallback(() => { void request<Status[]>('/orders/statuses').then(setStatuses).catch(() => {}) }, [])
   useEffect(() => { refreshStatuses() }, [refreshStatuses])
   useEffect(() => { void request<BlockerType[]>('/blockers/types').then(setBlockerTypes).catch(() => {}) }, [])
@@ -115,11 +115,7 @@ export function Orders({ current, mine, initialFilter = '' }: { current: User; m
     if (!canAssign) return
     request<{ items: Assignee[] }>('/users?limit=100').then(result => setAssignees(result.items.filter(user => user.is_active && user.permissions.includes('orders.change_status')))).catch(() => setAssignees([]))
   }, [canAssign])
-  useEffect(() => {
-    const source = new EventSource('/api/orders/events')
-    source.addEventListener('orders', () => { void refresh(); refreshStatuses() })
-    return () => source.close()
-  }, [refresh, refreshStatuses])
+  useEffect(() => { refreshStatuses() }, [refreshToken, refreshStatuses])
 
   async function editStatus(entry: Status) {
     const display_name = window.prompt('Название статуса', entry.display_name)

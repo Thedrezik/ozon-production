@@ -1,6 +1,7 @@
 """Add searchable order number and warehouse fields."""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0012_order_search_fields"

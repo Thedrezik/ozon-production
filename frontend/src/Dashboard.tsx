@@ -10,7 +10,7 @@ type Destination = 'queue' | 'manager-tasks' | 'money-at-risk'
 
 function rubles(value: string) { return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value))} ₽` }
 
-export function Dashboard({ open }: { open: (destination: Destination, filter?: string) => void }) {
+export function Dashboard({ open, refreshToken = 0 }: { open: (destination: Destination, filter?: string) => void; refreshToken?: number }) {
   const [data, setData] = useState<Snapshot | null>(null)
   const [error, setError] = useState('')
   const refresh = useCallback(async () => {
@@ -20,7 +20,7 @@ export function Dashboard({ open }: { open: (destination: Destination, filter?: 
       setData(await response.json() as Snapshot); setError('')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось загрузить сводку') }
   }, [])
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { void refresh() }, [refresh, refreshToken])
 
   const card = (label: string, value: string | number, destination: Destination, filter?: string) =>
     <button onClick={() => open(destination, filter)} className="min-h-28 rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-blue-500 focus-visible:outline-2 focus-visible:outline-blue-700">

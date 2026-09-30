@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
@@ -61,7 +61,7 @@ class TaskUpdate(BaseModel):
 
 
 @router.patch("/{task_id}")
-def update_task(task_id: int, payload: TaskUpdate, db: Db,
+def update_task(task_id: int, payload: TaskUpdate, db: Db, request: Request,
                 actor: Annotated[User, Depends(require("manager_tasks.manage"))]) -> dict:
     task = db.scalar(select(ManagerTask).where(ManagerTask.id == task_id).with_for_update())
     if task is None:
@@ -85,5 +85,6 @@ def update_task(task_id: int, payload: TaskUpdate, db: Db,
     db.add(AuditLog(actor_user_id=actor.id, action="manager_task.updated",
                     detail=f"{task.id} {payload.status}"))
     db.commit()
+    request.app.state.order_events.publish(task.order_id or 0)
     return task_data(db.scalar(select(ManagerTask).options(joinedload(ManagerTask.order),
                                       joinedload(ManagerTask.assignee)).where(ManagerTask.id == task_id)))

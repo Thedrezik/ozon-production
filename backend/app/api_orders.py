@@ -323,10 +323,10 @@ def bulk_action(payload: BulkActionInput, db: Db, request: Request,
             db.add(OrderTimelineEvent(order_id=order.id, event_type="assignment_changed", description=description, actor_user_id=actor.id))
         else:
             transition(db, order, payload.status, actor.id)
-        request.app.state.order_events.publish(order.id)
     db.add(AuditLog(actor_user_id=actor.id, action=f"order.bulk_{payload.action}",
                     detail=f"{','.join(order.posting_number for order in orders)}; target={payload.user_id if payload.action == 'assign' else payload.status}"))
     db.commit()
+    request.app.state.order_events.publish(0)
     return {"updated": len(orders), "order_ids": ids}
 
 

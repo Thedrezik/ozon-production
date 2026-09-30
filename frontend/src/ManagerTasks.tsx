@@ -26,7 +26,7 @@ async function request<T>(path: string, options: RequestInit = {}, csrf?: string
   return response.json() as Promise<T>
 }
 
-export function ManagerTasks({ current, initialStatus = 'OPEN' }: { current: Current; initialStatus?: string }) {
+export function ManagerTasks({ current, initialStatus = 'OPEN', refreshToken = 0 }: { current: Current; initialStatus?: string; refreshToken?: number }) {
   const [items, setItems] = useState<Task[]>([])
   const [people, setPeople] = useState<Assignee[]>([])
   const [severity, setSeverity] = useState('')
@@ -51,7 +51,7 @@ export function ManagerTasks({ current, initialStatus = 'OPEN' }: { current: Cur
     request<{ items: Task[]; total: number }>(`/manager-tasks?${params}`).then(result => {
       setItems(result.items); setTotal(result.total); setNotice('')
     }).catch(() => setNotice('Не удалось загрузить задачи'))
-  }, [severity, source, assignee, status, offset])
+  }, [severity, source, assignee, status, offset, refreshToken])
 
   async function update(task: Task, next: 'IN_PROGRESS' | 'RESOLVED' | 'DISMISSED') {
     setBusy(task.id)

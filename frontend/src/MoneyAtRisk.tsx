@@ -21,7 +21,7 @@ async function get<T>(path: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export function MoneyAtRisk({ initialBucket = '' }: { initialBucket?: string }) {
+export function MoneyAtRisk({ initialBucket = '', refreshToken = 0 }: { initialBucket?: string; refreshToken?: number }) {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [selected, setSelected] = useState<string | null>(initialBucket || null)
   const [category, setCategory] = useState('')
@@ -34,7 +34,7 @@ export function MoneyAtRisk({ initialBucket = '' }: { initialBucket?: string }) 
     try { setSummary(await get<Summary>('')); setError('') }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Ошибка загрузки') }
   }, [])
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { void refresh() }, [refresh, refreshToken])
   useEffect(() => {
     if (!selected) return
     let active = true

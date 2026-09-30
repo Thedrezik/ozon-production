@@ -20,7 +20,7 @@ async function request<T>(path: string, options: RequestInit = {}, csrf?: string
   return response.json() as Promise<T>
 }
 
-export function Procurement({ current }: { current: Current }) {
+export function Procurement({ current, refreshToken = 0 }: { current: Current; refreshToken?: number }) {
   const [items, setItems] = useState<Task[]>([])
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
@@ -49,7 +49,7 @@ export function Procurement({ current }: { current: Current }) {
     const result = await request<{ items: Task[]; total: number }>(`/procurement?${params}`)
     setItems(result.items); setTotal(result.total)
   }, [mine, status, overdue, offset])
-  useEffect(() => { void refresh().catch(() => setNotice('Не удалось загрузить закупки')) }, [refresh])
+  useEffect(() => { void refresh().catch(() => setNotice('Не удалось загрузить закупки')) }, [refresh, refreshToken])
   useEffect(() => {
     if (!current.permissions.includes('users.view')) return
     void request<{ items: Person[] }>('/users?limit=100').then(result => setPeople(result.items.filter(

@@ -19,10 +19,11 @@ Last updated: 2026-09-30
 - Task 013: manager dashboard with risk, urgent order and task counts, attention list, staff workload, and filtered drill-downs.
 - Task 014: worker-first mobile navigation for My Tasks, Queue and Problems; priority-ranked Next Task selection using existing queue/claim APIs; compact worker cards and permission-aware financial detail visibility.
 - Task 015: queue search across posting/order numbers, SKU, offer_id and product; combined status/Ozon status/priority/worker/blocker/readiness/deadline/warehouse/product filters; safe paginated bulk assignment/status transitions with backend permissions and audit.
+- Task 016: shared SSE refresh for orders, blockers and manager tasks across active screens; reconnect, focus and periodic API reconciliation.
 
 ## Current
 
-- Task 015 complete. Apply migrations through `0012_order_search_fields` before starting the updated API.
+- Task 016 complete. Apply migrations through `0012_order_search_fields` before starting the updated API.
 
 ## Next
 
@@ -30,8 +31,8 @@ Last updated: 2026-09-30
 
 ## Known Issues
 
-- Docker is unavailable in this environment, so PostgreSQL/Compose checks could not be run for tasks 013–015.
-- Browser UI smoke was not completed; queue search, filters, pagination and bulk API behavior passed through TestClient.
+- Docker is unavailable in this environment, so PostgreSQL/Compose checks could not be run for tasks 013–016.
+- Browser UI smoke was not completed; realtime behavior was checked through the event-bus test and frontend build, but the two-browser scenario awaits a running deployment.
 - Ozon `order_number` and warehouse values are stored for filtering but upstream integration has not yet been added to populate those nullable columns.
 - Real Ozon tariff mapping remains pending official field/semantics verification during integration. No money at risk is inferred from order value or rates alone.
 - Photo upload infrastructure is not yet available; blocker responses reserve a `photos` field.
@@ -49,4 +50,4 @@ Last updated: 2026-09-30
 
 - Backend: 45 pytest tests passed; Ruff passed (SQLite test database).
 - Frontend: ESLint, TypeScript and Vite PWA build passed using `--configLoader runner`.
-- UI: task 015 lint, typecheck and production build passed; no browser mock smoke run because Docker is unavailable.
+- UI: two-browser mock smoke and PostgreSQL migration checks unavailable without Docker.
