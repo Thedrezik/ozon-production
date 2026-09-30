@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.auth import Current, Db, require
@@ -18,6 +18,7 @@ from app.models import (
     CommentMention,
     InternalStatus,
     Order,
+    OrderItem,
     OrderTimelineEvent,
     PrioritySettings,
     ProductProductionProfile,
@@ -26,7 +27,7 @@ from app.models import (
     User,
     utc_now,
 )
-from app.orders import STATUSES, transition
+from app.orders import STATUSES, TRANSITIONS, transition
 from app.priority import PriorityInput, PriorityWeights, evaluate, sort_key
 from app.rbac import user_permissions
 from app.tariff import evaluate as evaluate_tariff
@@ -46,6 +47,13 @@ class StatusSettingsInput(BaseModel):
 
 class AssignmentInput(BaseModel):
     user_id: int | None
+
+
+class BulkActionInput(BaseModel):
+    order_ids: list[int] = Field(min_length=1, max_length=100)
+    action: Literal["assign", "status"]
+    user_id: int | None = None
+    status: Literal["NEW", "QUEUED", "SENT_TO_PRODUCTION", "IN_PRODUCTION", "BLOCKED", "PRODUCED", "QUALITY_CHECK", "PACKING", "READY_TO_SHIP", "HANDED_TO_SHIPPING", "DONE", "CANCELLED"] | None = None
 
 
 class CommentInput(BaseModel):
@@ -129,6 +137,7 @@ def order_data(order: Order, profiles: dict[tuple[str, str], ProductProductionPr
     profiles = profiles or {}
     return {
         "id": order.id, "posting_number": order.posting_number,
+        "order_number": order.order_number, "warehouse_id": order.warehouse_id,
         "ozon_status": order.ozon_status, "internal_status": order.internal_status,
         "production_started_at": order.production_started_at,
         "production_completed_at": order.production_completed_at,
@@ -182,6 +191,8 @@ def list_orders(
     status: str | None = None, assigned_user_id: int | None = None,
     blocked: bool | None = None, ready: bool | None = None, overdue: bool | None = None,
     priority_level: str | None = None,
+    q: str | None = None, ozon_status: str | None = None,
+    product: str | None = None, warehouse: str | None = None,
     limit: int = 20, offset: int = 0,
 ) -> dict:
     if status is not None and status not in STATUSES:
@@ -205,6 +216,19 @@ def list_orders(
                             (Order.shipment_deadline >= utc_now()) | ~active)
     if priority_level is not None:
         query = query.where(Order.internal_status.notin_(("DONE", "CANCELLED", "HANDED_TO_SHIPPING")))
+    if ozon_status:
+        query = query.where(Order.ozon_status == ozon_status)
+    if product:
+        query = query.where(Order.id.in_(select(OrderItem.order_id).where(OrderItem.product_name.ilike(f"%{product.strip()}%"))))
+    if warehouse:
+        query = query.where(Order.warehouse_id == warehouse)
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        query = query.where(or_(Order.posting_number.ilike(term),
+                                Order.order_number.ilike(term),
+                                Order.id.in_(select(OrderItem.order_id).where(or_(
+                                    OrderItem.sku.ilike(term), OrderItem.offer_id.ilike(term),
+                                    OrderItem.product_name.ilike(term))))))
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     ids = db.scalars(query.with_only_columns(Order.id)).all()
     if not ids:
@@ -240,6 +264,70 @@ def list_orders(
     return {"items": [order_data(order, profile_map, visible_priority(priority), visible_tariff(order))
                       for order, priority in ranked[offset:offset + limit]],
             "total": total}
+
+
+@router.post("/bulk")
+def bulk_action(payload: BulkActionInput, db: Db, request: Request,
+                actor: Annotated[User, Depends(require("orders.view"))]) -> dict:
+    permissions = user_permissions(actor)
+    required = "orders.assign" if payload.action == "assign" else "orders.change_status"
+    if required not in permissions:
+        raise HTTPException(403, "Permission denied")
+    ids = sorted(set(payload.order_ids))
+    if len(ids) != len(payload.order_ids):
+        raise HTTPException(422, "Duplicate order IDs")
+    orders = db.scalars(select(Order).where(Order.id.in_(ids)).order_by(Order.id).with_for_update()).all()
+    if len(orders) != len(ids):
+        raise HTTPException(404, "One or more orders not found")
+    target = None
+    if payload.action == "assign":
+        if payload.status is not None:
+            raise HTTPException(422, "Status is not valid for assignment")
+        if payload.user_id is not None:
+            target = db.scalar(select(User).options(selectinload(User.roles).selectinload(Role.permissions)).where(User.id == payload.user_id))
+            if target is None or not target.is_active or "orders.change_status" not in user_permissions(target):
+                raise HTTPException(422, "Assignee must be an active production user")
+        if any(order.internal_status in ("DONE", "CANCELLED") for order in orders):
+            raise HTTPException(409, "Closed orders cannot be assigned")
+    else:
+        if payload.status is None or payload.user_id is not None:
+            raise HTTPException(422, "Status is required for status action")
+        if payload.status == "BLOCKED":
+            raise HTTPException(409, "Create a blocker to mark orders blocked")
+        for order in orders:
+            if order.internal_status == "BLOCKED" and payload.status != "CANCELLED":
+                active = db.scalar(select(Blocker.id).where(Blocker.order_id == order.id, Blocker.status.in_(("OPEN", "IN_PROGRESS"))).limit(1))
+                if active is not None:
+                    raise HTTPException(409, f"Resolve active blockers first: {order.posting_number}")
+            try:
+                if payload.status not in TRANSITIONS.get(order.internal_status, set()):
+                    raise ValueError
+            except ValueError:
+                raise HTTPException(409, f"Invalid status transition for {order.posting_number}") from None
+            if "orders.assign" not in permissions:
+                assigned_id = db.scalar(select(Assignment.user_id).where(Assignment.order_id == order.id))
+                if assigned_id != actor.id or payload.status in ("BLOCKED", "CANCELLED", "DONE", "NEW"):
+                    raise HTTPException(403, f"Manager action required: {order.posting_number}")
+    for order in orders:
+        if payload.action == "assign":
+            assignment = db.scalar(select(Assignment).where(Assignment.order_id == order.id))
+            if payload.user_id is None:
+                if assignment:
+                    db.delete(assignment)
+            elif assignment:
+                assignment.user_id = target.id
+                assignment.assigned_by = actor.id
+            else:
+                db.add(Assignment(order_id=order.id, user_id=target.id, assigned_by=actor.id))
+            description = f"Ответственный: {target.display_name}" if target else "Ответственный снят"
+            db.add(OrderTimelineEvent(order_id=order.id, event_type="assignment_changed", description=description, actor_user_id=actor.id))
+        else:
+            transition(db, order, payload.status, actor.id)
+        request.app.state.order_events.publish(order.id)
+    db.add(AuditLog(actor_user_id=actor.id, action=f"order.bulk_{payload.action}",
+                    detail=f"{','.join(order.posting_number for order in orders)}; target={payload.user_id if payload.action == 'assign' else payload.status}"))
+    db.commit()
+    return {"updated": len(orders), "order_ids": ids}
 
 
 @router.get("/priority-settings")

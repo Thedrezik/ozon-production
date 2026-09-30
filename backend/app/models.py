@@ -91,6 +91,8 @@ class Order(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     posting_number: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    order_number: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    warehouse_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     ozon_status: Mapped[str] = mapped_column(String(40), nullable=False)
     internal_status: Mapped[str] = mapped_column(ForeignKey("internal_statuses.name"), nullable=False, index=True)
     shipment_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)

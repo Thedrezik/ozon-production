@@ -8,7 +8,7 @@ from app.cli import create_admin
 from app.config import Settings
 from app.database import Base
 from app.main import create_app
-from app.models import Assignment, Order, StatusHistory, User
+from app.models import Assignment, AuditLog, Order, StatusHistory, User
 from app.order_events import OrderEvents
 from app.orders import seed_mock_orders
 from app.rbac import seed_rbac
@@ -96,6 +96,42 @@ def test_queue_filters_assignment_permissions_and_history(tmp_path):
         with Session(app.state.engine) as db:
             assert db.scalar(select(Assignment.user_id).where(Assignment.order_id == order_id)) == worker_id
             assert db.scalar(select(User.id).where(User.username == "worker")) == worker_id
+
+
+def test_search_combined_filters_pagination_and_bulk_actions(tmp_path):
+    app = setup_app(tmp_path)
+    with Session(app.state.engine) as db:
+        seed_mock_orders(db)
+        queued = db.scalar(select(Order).where(Order.internal_status == "QUEUED"))
+        queued.order_number = "ORDER-42"
+        queued.warehouse_id = "WH-1"
+        queued.items[0].sku = "SKU-42"
+        queued.items[0].offer_id = "OFFER-42"
+        db.commit()
+    with TestClient(app) as client:
+        headers = login(client)
+        worker_id = client.post("/api/users", headers=headers, json={"username": "bulk-worker", "display_name": "Bulk worker", "password": "worker-password-123", "roles": ["PRODUCTION_WORKER"]}).json()["id"]
+        for term in ("MOCK-NORMAL", "ORDER-42", "SKU-42", "OFFER-42", "Тумба прикроватная"):
+            assert client.get("/api/orders", params={"q": term}).json()["total"] >= 1
+        assert client.get("/api/orders", params={"warehouse": "WH-1", "product": "Тумба", "status": "QUEUED"}).json()["total"] == 1
+        first = client.get("/api/orders", params={"status": "QUEUED", "limit": 1, "offset": 0}).json()
+        second = client.get("/api/orders", params={"status": "QUEUED", "limit": 1, "offset": 1}).json()
+        assert first["total"] == second["total"] == 2
+        assert first["items"][0]["id"] != second["items"][0]["id"]
+        order_id = queued_id = next(row["id"] for row in first["items"] + second["items"] if row["order_number"] == "ORDER-42")
+        assert client.post("/api/orders/bulk", headers=headers, json={"order_ids": [order_id], "action": "assign", "user_id": worker_id}).status_code == 200
+        assert client.post("/api/orders/bulk", headers=headers, json={"order_ids": [order_id], "action": "status", "status": "IN_PRODUCTION"}).status_code == 200
+        assert client.post("/api/orders/bulk", headers=headers, json={"order_ids": [order_id], "action": "status", "status": "READY_TO_SHIP"}).status_code == 409
+        with Session(app.state.engine) as db:
+            order = db.get(Order, queued_id)
+            assert order.internal_status == "IN_PRODUCTION"
+            assert db.scalar(select(Assignment.user_id).where(Assignment.order_id == queued_id)) == worker_id
+            assert db.scalar(select(AuditLog.id).where(AuditLog.action == "order.bulk_assign")) is not None
+            assert db.scalar(select(AuditLog.id).where(AuditLog.action == "order.bulk_status")) is not None
+        client.post("/api/users", headers=headers, json={"username": "bulk-viewer", "display_name": "Viewer", "password": "viewer-password-123", "roles": ["VIEWER"]})
+        with TestClient(app) as other:
+            viewer_headers = login(other, "bulk-viewer", "viewer-password-123")
+            assert other.post("/api/orders/bulk", headers=viewer_headers, json={"order_ids": [queued_id], "action": "assign", "user_id": worker_id}).status_code == 403
 
 
 

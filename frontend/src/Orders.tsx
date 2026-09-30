@@ -69,7 +69,13 @@ function OrderTimeline({ orderId, current }: { orderId: number; current: User })
 export function Orders({ current, mine, initialFilter = '' }: { current: User; mine: boolean; initialFilter?: string }) {
   const [page, setPage] = useState<Page>({ items: [], total: 0 })
   const [status, setStatus] = useState('')
+  const [priorityLevel, setPriorityLevel] = useState('')
   const [special, setSpecial] = useState(initialFilter)
+  const [search, setSearch] = useState('')
+  const [ozonStatus, setOzonStatus] = useState('')
+  const [product, setProduct] = useState('')
+  const [warehouse, setWarehouse] = useState('')
+  const [selected, setSelected] = useState<number[]>([])
   const [offset, setOffset] = useState(0)
   const [busy, setBusy] = useState<number | null>(null)
   const [error, setError] = useState('')
@@ -89,11 +95,16 @@ export function Orders({ current, mine, initialFilter = '' }: { current: User; m
     const params = new URLSearchParams({ limit: '20', offset: String(offset) })
     if (mine) params.set('assigned_user_id', String(current.id))
     if (status) params.set('status', status)
+    if (priorityLevel) params.set('priority_level', priorityLevel)
+    if (search.trim()) params.set('q', search.trim())
+    if (ozonStatus) params.set('ozon_status', ozonStatus)
+    if (product.trim()) params.set('product', product.trim())
+    if (warehouse.trim()) params.set('warehouse', warehouse.trim())
     if (special.startsWith('assigned_user_id:')) params.set('assigned_user_id', special.split(':')[1])
     else if (special) params.set(special, special === 'priority_level' ? 'P0' : 'true')
     try { setPage(await request<Page>(`/orders?${params}`)); const result = await request<{ items: Blocker[] }>('/blockers?limit=100'); setBlockers(result.items); setError('') }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось загрузить очередь') }
-  }, [mine, current.id, offset, status, special])
+  }, [mine, current.id, offset, status, priorityLevel, special, search, ozonStatus, product, warehouse])
 
   useEffect(() => { void refresh() }, [refresh])
   const refreshStatuses = useCallback(() => { void request<Status[]>('/orders/statuses').then(setStatuses).catch(() => {}) }, [])
@@ -130,6 +141,16 @@ export function Orders({ current, mine, initialFilter = '' }: { current: User; m
       await refresh()
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось обновить заказ') }
     finally { setBusy(null) }
+  }
+
+  async function bulk(action: 'assign' | 'status', value: string | number | null) {
+    if (!selected.length) return
+    const actionLabel = action === 'assign' ? 'назначение сотрудника' : `переход в статус «${statuses.find(s => s.code === value)?.display_name ?? value}»`
+    if (!window.confirm(`Подтвердить ${actionLabel} для ${selected.length} заказов?`)) return
+    try {
+      await request('/orders/bulk', { method: 'POST', body: JSON.stringify({ order_ids: selected, action, ...(action === 'assign' ? { user_id: value === -1 ? null : value } : { status: value }) }) }, current.csrf_token)
+      setSelected([]); await refresh()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Массовое действие не выполнено') }
   }
 
   async function changePriority(order: Order, level: string | null, pinned: boolean) {
@@ -223,15 +244,20 @@ export function Orders({ current, mine, initialFilter = '' }: { current: User; m
 
   return <section className="space-y-4"><div className="flex items-center justify-between"><h2 className="text-2xl font-bold">{initialFilter === 'blocked' ? 'Проблемы' : mine ? 'Мои задачи' : 'Очередь'}</h2><button onClick={() => void refresh()} className="min-h-11 rounded-xl border bg-white px-4 py-3">Обновить</button></div>
     {shopWorker && <button disabled={nextBusy} onClick={() => void nextTask()} className="min-h-14 w-full rounded-2xl bg-blue-800 px-5 py-4 text-lg font-bold text-white shadow-sm disabled:opacity-50">{nextBusy ? 'Ищем задачу…' : 'Следующая задача'}</button>}
-    <div className="grid grid-cols-2 gap-2"><label className="text-sm">Статус<select value={status} onChange={event => { setStatus(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3"><option value="">Все</option>{statuses.map(entry => <option value={entry.code} key={entry.code}>{entry.display_name}</option>)}</select></label>
-      <label className="text-sm">Показать<select value={special} onChange={event => { setSpecial(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3"><option value="">Все</option>{special.startsWith('assigned_user_id:') && <option value={special}>Сотрудник</option>}<option value="priority_level">Критические</option><option value="blocked">Проблемы</option><option value="ready">Готовые</option><option value="overdue">Просроченные</option></select></label></div>
+    <div className="grid gap-2 sm:grid-cols-2"><label className="text-sm sm:col-span-2">Поиск<input aria-label="Поиск заказов" placeholder="Отправление, заказ, SKU, offer_id, товар" value={search} onChange={event => { setSearch(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3" /></label><label className="text-sm">Статус<select value={status} onChange={event => { setStatus(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3"><option value="">Все</option>{statuses.map(entry => <option value={entry.code} key={entry.code}>{entry.display_name}</option>)}</select></label>
+      <label className="text-sm">Приоритет<select value={priorityLevel} onChange={event => { setPriorityLevel(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3"><option value="">Все</option>{['P0', 'P1', 'P2', 'P3'].map(level => <option key={level}>{level}</option>)}</select></label><label className="text-sm">Показать<select value={special} onChange={event => { setSpecial(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3"><option value="">Все</option><option value="blocked">Проблемы</option><option value="ready">Готовые</option><option value="overdue">Просроченные</option></select></label>
+      <label className="text-sm">Статус Ozon<input value={ozonStatus} onChange={event => { setOzonStatus(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3" /></label><label className="text-sm">Товар<input value={product} onChange={event => { setProduct(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3" /></label><label className="text-sm">Склад<input value={warehouse} onChange={event => { setWarehouse(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3" /></label>
+      <label className="text-sm">Ответственный<select value={special.startsWith('assigned_user_id:') ? special.split(':')[1] : ''} onChange={event => { setSpecial(event.target.value ? `assigned_user_id:${event.target.value}` : ''); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3"><option value="">Все</option>{assignees.map(person => <option key={person.id} value={person.id}>{person.display_name}</option>)}</select></label>
+    </div>
+    {canAssign && !mine && selected.length > 0 && <div className="flex flex-wrap items-end gap-2 rounded-xl bg-blue-50 p-3"><strong className="self-center">Выбрано: {selected.length}</strong><label className="text-sm">Назначить<select aria-label="Массовое назначение" defaultValue="" onChange={event => { if (event.target.value) void bulk('assign', Number(event.target.value)); event.target.value = '' }} className="ml-2 min-h-11 rounded border bg-white p-2"><option value="">Выбрать сотрудника</option><option value="-1">Снять назначение</option>{assignees.map(person => <option key={person.id} value={person.id}>{person.display_name}</option>)}</select></label><label className="text-sm">Статус<select aria-label="Массовый статус" defaultValue="" onChange={event => { if (event.target.value) void bulk('status', event.target.value); event.target.value = '' }} className="ml-2 min-h-11 rounded border bg-white p-2"><option value="">Выбрать статус</option>{statuses.filter(s => s.code !== 'BLOCKED').map(s => <option key={s.code} value={s.code}>{s.display_name}</option>)}</select></label><button onClick={() => setSelected([])} className="min-h-11 rounded border px-3">Снять выбор</button></div>}
     {!shopWorker && current.permissions.includes('settings.manage') && <details className="rounded-xl bg-white p-3"><summary>Настроить статусы</summary><div className="mt-2 grid gap-2">{statuses.map(entry => <button key={entry.code} onClick={() => void editStatus(entry)} className="rounded border p-2 text-left">{entry.display_name} ({entry.code}) · {entry.sort_order}</button>)}</div></details>}
     {!shopWorker && current.permissions.includes('settings.manage') && prioritySettings && <details className="rounded-xl bg-white p-3"><summary>Настроить приоритет</summary><form onSubmit={event => void savePrioritySettings(event)} className="mt-3 grid gap-3 sm:grid-cols-2">{([
       ['deadline_weight', 'Срок отгрузки, %'], ['tariff_weight', 'Срок тарифа, %'], ['finance_weight', 'Денежный эффект и стоимость, %'], ['feasibility_weight', 'Возможность успеть, %'], ['high_impact_rub', 'Высокий эффект тарифа, ₽'], ['high_value_rub', 'Высокая стоимость заказа, ₽'],
     ] as const).map(([key, label]) => <label key={key} className="text-sm">{label}<input type="number" min={key.endsWith('_weight') ? 0 : 1} max={key.endsWith('_weight') ? 100 : undefined} step={key.endsWith('_weight') ? 1 : '0.01'} required value={prioritySettings[key]} onChange={event => setPrioritySettings({ ...prioritySettings, [key]: key.endsWith('_weight') ? Number(event.target.value) : event.target.value })} className="mt-1 w-full rounded-lg border p-3" /></label>)}<p className="self-center text-sm">Сумма весов: {prioritySettings.deadline_weight + prioritySettings.tariff_weight + prioritySettings.finance_weight + prioritySettings.feasibility_weight}%</p><button className="min-h-11 rounded-lg bg-blue-800 px-3 text-white">Сохранить</button></form></details>}
     {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</p>}
     {!page.items.length && <p className="rounded-xl bg-white p-5">Заказов нет.</p>}
-    {page.items.map(order => <article id={`order-${order.id}`} key={order.id} className="scroll-mt-4 rounded-2xl border bg-white p-4 shadow-sm sm:p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">{order.items.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</h3><p className="mt-1 text-sm text-slate-600">{order.posting_number}</p>{!shopWorker && order.items.some(item => item.production_profile) && <p className="mt-2 text-sm text-slate-600">Норматив: {order.items.filter(item => item.production_profile).map(item => `${item.production_profile!.production_minutes} мин производство + ${item.production_profile!.packing_minutes} мин упаковка${item.quantity > 1 ? ` × ${item.quantity}` : ''}`).join('; ')}</p>}</div><span className="shrink-0 rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-900">{statuses.find(entry => entry.code === order.internal_status)?.display_name ?? labels[order.internal_status]}</span></div>
+    {canAssign && !mine && page.items.length > 0 && <label className="flex items-center gap-2 rounded-lg bg-white p-3 text-sm"><input type="checkbox" checked={page.items.every(order => selected.includes(order.id))} onChange={event => setSelected(event.target.checked ? [...new Set([...selected, ...page.items.map(order => order.id)])] : selected.filter(id => !page.items.some(order => order.id === id)))} />Выбрать страницу</label>}
+    {page.items.map(order => <article id={`order-${order.id}`} key={order.id} className="scroll-mt-4 rounded-2xl border bg-white p-4 shadow-sm sm:p-5"><div className="flex items-start justify-between gap-3"><div className="flex items-start gap-3">{canAssign && !mine && <input aria-label={`Выбрать заказ ${order.posting_number}`} type="checkbox" checked={selected.includes(order.id)} onChange={event => setSelected(event.target.checked ? [...selected, order.id] : selected.filter(id => id !== order.id))} className="mt-2 h-5 w-5" />}<div><h3 className="text-lg font-semibold">{order.items.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</h3><p className="mt-1 text-sm text-slate-600">{order.posting_number}</p>{!shopWorker && order.items.some(item => item.production_profile) && <p className="mt-2 text-sm text-slate-600">Норматив: {order.items.filter(item => item.production_profile).map(item => `${item.production_profile!.production_minutes} мин производство + ${item.production_profile!.packing_minutes} мин упаковка${item.quantity > 1 ? ` × ${item.quantity}` : ''}`).join('; ')}</p>}</div></div><span className="shrink-0 rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-900">{statuses.find(entry => entry.code === order.internal_status)?.display_name ?? labels[order.internal_status]}</span></div>
       {order.priority && <div className={`mt-3 rounded-xl border p-3 ${order.priority.blocked ? 'border-red-300 bg-red-50' : order.priority.level === 'P0' ? 'border-red-300 bg-red-50' : order.priority.level === 'P1' ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}><p className="font-bold">{order.priority.level} · {order.priority.label}{order.priority.blocked ? ' · Заблокирован' : ''}{order.priority.pinned ? ' · Закреплён' : ''}</p><ul className="mt-2 list-disc pl-5 text-sm">{order.priority.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul></div>}
       {!shopWorker && current.permissions.includes('finance.view') && order.tariff && <TariffTimeline tariff={order.tariff} />}
       <p className="mt-3 text-sm">Отгрузить до: <strong>{new Date(order.shipment_deadline).toLocaleString('ru-RU')}</strong></p>{!shopWorker && <p className="mt-1 text-sm">Ответственный: {order.assigned_user?.display_name || 'Не назначен'}</p>}
