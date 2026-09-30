@@ -11,8 +11,11 @@ from app.auth import Current, Db, require
 from app.models import (
     Assignment,
     AuditLog,
+    Comment,
+    CommentMention,
     InternalStatus,
     Order,
+    OrderTimelineEvent,
     Role,
     StatusHistory,
     User,
@@ -35,6 +38,11 @@ class StatusSettingsInput(BaseModel):
 
 class AssignmentInput(BaseModel):
     user_id: int | None
+
+
+class CommentInput(BaseModel):
+    body: str = Field(min_length=1, max_length=5000)
+    mention_user_ids: list[int] = Field(default_factory=list, max_length=50)
 
 
 def order_query():
@@ -146,6 +154,64 @@ def history(order_id: int, db: Db, _actor: Annotated[User, Depends(require("orde
              "changed_at": row.changed_at, "changed_by": row.changed_by} for row in rows]
 
 
+@router.get("/{order_id}/timeline")
+def timeline(order_id: int, db: Db, _actor: Annotated[User, Depends(require("orders.view"))],
+             limit: int = 100, offset: int = 0) -> dict:
+    if db.get(Order, order_id) is None:
+        raise HTTPException(404, "Order not found")
+    if not 1 <= limit <= 200 or offset < 0:
+        raise HTTPException(422, "Invalid pagination")
+    comments = db.scalars(select(Comment).options(joinedload(Comment.author), selectinload(Comment.mentions))
+                          .where(Comment.order_id == order_id).order_by(Comment.created_at, Comment.id)).all()
+    statuses = db.scalars(select(StatusHistory).options(joinedload(StatusHistory.changed_by_user))
+                          .where(StatusHistory.order_id == order_id)).all()
+    status_labels = {row.name: row.display_name for row in db.scalars(select(InternalStatus)).all()}
+    events = db.scalars(select(OrderTimelineEvent).options(joinedload(OrderTimelineEvent.actor))
+                        .where(OrderTimelineEvent.order_id == order_id)).all()
+    items = [
+        {"id": f"comment-{row.id}", "kind": "comment", "body": row.body,
+         "author": row.author.display_name if row.author else "Удалённый пользователь",
+         "created_at": row.created_at, "mention_user_ids": [m.user_id for m in row.mentions]}
+        for row in comments
+    ] + [
+        {"id": f"status-{row.id}", "kind": "system", "event_type": "status_changed",
+         "body": f"Статус изменён: {status_labels.get(row.old_status, '—')} → {status_labels.get(row.new_status, row.new_status)}",
+         "author": None, "created_at": row.changed_at, "mention_user_ids": []} for row in statuses
+    ] + [
+        {"id": f"event-{row.id}", "kind": "system", "event_type": row.event_type,
+         "body": row.description, "author": row.actor.display_name if row.actor else None,
+         "created_at": row.created_at, "mention_user_ids": []} for row in events
+    ]
+    items.sort(key=lambda item: (item["created_at"], item["id"]))
+    total = len(items)
+    return {"items": items[offset:offset + limit], "total": total}
+
+
+@router.post("/{order_id}/comments", status_code=201)
+def create_comment(order_id: int, payload: CommentInput, db: Db, request: Request,
+                   actor: Annotated[User, Depends(require("comments.create"))]) -> dict:
+    if db.get(Order, order_id) is None:
+        raise HTTPException(404, "Order not found")
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(422, "Comment cannot be blank")
+    mention_ids = sorted(set(payload.mention_user_ids))
+    if mention_ids:
+        found = set(db.scalars(select(User.id).where(User.id.in_(mention_ids), User.is_active)).all())
+        if found != set(mention_ids):
+            raise HTTPException(422, "Mentioned users must be active")
+    comment = Comment(order_id=order_id, author_user_id=actor.id, body=body,
+                      mentions=[CommentMention(user_id=user_id) for user_id in mention_ids])
+    db.add(comment)
+    db.add(AuditLog(actor_user_id=actor.id, action="order.comment_created", detail=str(order_id)))
+    db.commit()
+    db.refresh(comment)
+    request.app.state.order_events.publish(order_id)
+    return {"id": comment.id, "kind": "comment", "body": comment.body,
+            "author": actor.display_name, "created_at": comment.created_at,
+            "mention_user_ids": mention_ids}
+
+
 @router.post("/{order_id}/claim")
 def claim(order_id: int, db: Db, actor: Annotated[User, Depends(require("orders.change_status"))], request: Request) -> dict:
     order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
@@ -156,6 +222,8 @@ def claim(order_id: int, db: Db, actor: Annotated[User, Depends(require("orders.
     if db.scalar(select(Assignment.id).where(Assignment.order_id == order_id)) is not None:
         raise HTTPException(409, "Order already assigned")
     db.add(Assignment(order_id=order_id, user_id=actor.id, assigned_by=actor.id))
+    db.add(OrderTimelineEvent(order_id=order_id, event_type="assignment_changed",
+                              description=f"Заказ взял в работу {actor.display_name}", actor_user_id=actor.id))
     if order.internal_status == "NEW":
         transition(db, order, "QUEUED", actor.id)
     db.add(AuditLog(actor_user_id=actor.id, action="order.claimed", detail=order.posting_number))
@@ -185,6 +253,10 @@ def assign(order_id: int, payload: AssignmentInput, db: Db, request: Request,
             assignment.assigned_by = actor.id
         else:
             db.add(Assignment(order_id=order_id, user_id=target.id, assigned_by=actor.id))
+    description = (f"Ответственный: {target.display_name}" if payload.user_id is not None
+                   else "Ответственный снят")
+    db.add(OrderTimelineEvent(order_id=order_id, event_type="assignment_changed",
+                              description=description, actor_user_id=actor.id))
     db.add(AuditLog(actor_user_id=actor.id, action="order.assigned", detail=order.posting_number))
     db.commit()
     request.app.state.order_events.publish(order_id)

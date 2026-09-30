@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 
 type User = { id: number; csrf_token?: string; permissions: string[] }
 type Order = { id: number; posting_number: string; shipment_deadline: string; internal_status: string; ozon_status: string; items: { product_name: string; quantity: number }[]; assigned_user: { id: number; display_name: string } | null }
 type Page = { items: Order[]; total: number }
 type Assignee = { id: number; display_name: string; is_active: boolean; permissions: string[] }
 type Status = { code: string; display_name: string; sort_order: number }
+type TimelineItem = { id: string; kind: 'comment' | 'system'; body: string; author: string | null; created_at: string }
 
 const labels: Record<string, string> = {
   NEW: 'Новый', QUEUED: 'В очереди', SENT_TO_PRODUCTION: 'Передан в производство',
@@ -20,6 +21,33 @@ async function request<T>(path: string, options: RequestInit = {}, csrf?: string
     throw new Error(body?.detail || `Ошибка ${response.status}`)
   }
   return response.json() as Promise<T>
+}
+
+function OrderTimeline({ orderId, current }: { orderId: number; current: User }) {
+  const [items, setItems] = useState<TimelineItem[]>([])
+  const [body, setBody] = useState('')
+  const [error, setError] = useState('')
+  const canComment = current.permissions.includes('comments.create')
+  const refresh = useCallback(async () => {
+    try { const result = await request<{ items: TimelineItem[] }>(`/orders/${orderId}/timeline`); setItems(result.items); setError('') }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось загрузить историю') }
+  }, [orderId])
+  useEffect(() => { void refresh() }, [refresh])
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    try {
+      await request(`/orders/${orderId}/comments`, { method: 'POST', body: JSON.stringify({ body }) }, current.csrf_token)
+      setBody(''); await refresh()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось отправить комментарий') }
+  }
+  return <details className="mt-4 rounded-xl border bg-slate-50 p-3" onToggle={event => { if (event.currentTarget.open) void refresh() }}>
+    <summary className="cursor-pointer font-semibold">История заказа ({items.length})</summary>
+    {error && <p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}
+    <ol className="mt-3 space-y-2">{items.map(item => <li key={item.id} className={`rounded-lg p-3 text-sm ${item.kind === 'system' ? 'border border-slate-200 bg-slate-100 text-slate-600' : 'border border-blue-100 bg-white'}`}>
+      <p>{item.body}</p><p className="mt-1 text-xs text-slate-500">{item.kind === 'system' ? 'Событие системы' : item.author} · {new Date(item.created_at).toLocaleString('ru-RU')}</p>
+    </li>)}</ol>
+    {canComment && <form onSubmit={event => void submit(event)} className="mt-3 space-y-2"><label className="sr-only" htmlFor={`comment-${orderId}`}>Комментарий</label><textarea id={`comment-${orderId}`} value={body} onChange={event => setBody(event.target.value)} maxLength={5000} required placeholder="Написать комментарий…" className="w-full rounded-xl border bg-white p-3"/><button disabled={!body.trim()} className="min-h-11 rounded-xl bg-blue-800 px-4 py-2 font-semibold text-white disabled:opacity-50">Добавить комментарий</button></form>}
+  </details>
 }
 
 export function Orders({ current, mine }: { current: User; mine: boolean }) {
@@ -102,7 +130,7 @@ export function Orders({ current, mine }: { current: User; mine: boolean }) {
       <div className="mt-4 grid gap-2 sm:grid-cols-2">{!order.assigned_user && ['NEW', 'QUEUED', 'SENT_TO_PRODUCTION'].includes(order.internal_status) && <button disabled={busy === order.id} onClick={() => void act(order, 'claim')} className="min-h-12 rounded-xl bg-blue-800 px-4 py-3 font-semibold text-white disabled:opacity-50">Взять в работу</button>}
         {actions(order).map(action => <button key={action.status} disabled={busy === order.id} onClick={() => void act(order, 'status', action.status)} className="min-h-12 rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white disabled:opacity-50">{action.label}</button>)}
         {['QUEUED', 'SENT_TO_PRODUCTION', 'IN_PRODUCTION'].includes(order.internal_status) && <button onClick={() => window.alert('Сообщение о проблеме появится в следующей версии. Обратитесь к руководителю.')} className="min-h-12 rounded-xl border border-red-300 px-4 py-3 font-semibold text-red-800">Проблема</button>}
-      </div>{canAssign && !['DONE', 'CANCELLED'].includes(order.internal_status) && <label className="mt-4 block text-sm">Назначить сотрудника<select value={order.assigned_user?.id ?? ''} disabled={busy === order.id} onChange={event => void act(order, 'assignment', event.target.value ? Number(event.target.value) : null)} className="mt-1 w-full rounded-xl border p-3"><option value="">Не назначен</option>{assignees.map(user => <option key={user.id} value={user.id}>{user.display_name}</option>)}</select></label>}
+      </div>{canAssign && !['DONE', 'CANCELLED'].includes(order.internal_status) && <label className="mt-4 block text-sm">Назначить сотрудника<select value={order.assigned_user?.id ?? ''} disabled={busy === order.id} onChange={event => void act(order, 'assignment', event.target.value ? Number(event.target.value) : null)} className="mt-1 w-full rounded-xl border p-3"><option value="">Не назначен</option>{assignees.map(user => <option key={user.id} value={user.id}>{user.display_name}</option>)}</select></label>}<OrderTimeline orderId={order.id} current={current}/>
     </article>)}
     <div className="flex items-center justify-between"><button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 20))} className="rounded-xl border bg-white px-4 py-3 disabled:opacity-40">Назад</button><span className="text-sm">{page.total ? `${offset + 1}–${Math.min(offset + 20, page.total)} из ${page.total}` : '0 заказов'}</span><button disabled={offset + 20 >= page.total} onClick={() => setOffset(offset + 20)} className="rounded-xl border bg-white px-4 py-3 disabled:opacity-40">Далее</button></div>
   </section>

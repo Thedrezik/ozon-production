@@ -1,6 +1,6 @@
 # Task 005 — Comments and Order Timeline
 
-status: pending  
+status: completed
 complexity: LOW  
 recommended_model: GPT-6 Luna
 reasoning: Medium
@@ -49,12 +49,12 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Комментарий можно создать.
-- [ ] Timeline отображается в правильном порядке.
-- [ ] System events отображаются отдельно.
-- [ ] Permissions проверяются backend.
-- [ ] Tests проходят.
-- [ ] STATE.md обновлён.
+- [x] Комментарий можно создать.
+- [x] Timeline отображается в правильном порядке.
+- [x] System events отображаются отдельно.
+- [x] Permissions проверяются backend.
+- [x] Tests проходят.
+- [x] STATE.md обновлён.
 
 ## Completion
 

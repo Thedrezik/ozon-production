@@ -130,6 +130,7 @@ class StatusHistory(Base):
     new_status: Mapped[str] = mapped_column(ForeignKey("internal_statuses.name"), nullable=False)
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     changed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    changed_by_user: Mapped[User | None] = relationship()
 
 
 class Assignment(Base):
@@ -143,3 +144,34 @@ class Assignment(Base):
     assigned_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     order: Mapped[Order] = relationship(back_populates="assignment")
     user: Mapped[User] = relationship(foreign_keys=[user_id])
+
+
+class Comment(Base):
+    __tablename__ = "comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    author_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    author: Mapped[User | None] = relationship()
+    mentions: Mapped[list["CommentMention"]] = relationship(cascade="all, delete-orphan")
+
+
+class CommentMention(Base):
+    __tablename__ = "comment_mentions"
+
+    comment_id: Mapped[int] = mapped_column(ForeignKey("comments.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+
+
+class OrderTimelineEvent(Base):
+    __tablename__ = "order_timeline_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    actor: Mapped[User | None] = relationship()

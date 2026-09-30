@@ -110,3 +110,35 @@ def test_realtime_event_bus_broadcasts_and_unsubscribes():
         bus.unsubscribe(second)
 
     asyncio.run(scenario())
+
+
+def test_comments_timeline_permissions_and_ordering(tmp_path):
+    app = setup_app(tmp_path)
+    with Session(app.state.engine) as db:
+        seed_mock_orders(db)
+    with TestClient(app) as admin:
+        admin_headers = login(admin)
+        order_id = admin.get("/api/orders?status=QUEUED&limit=1").json()["items"][0]["id"]
+        assert admin.post(f"/api/orders/{order_id}/comments", headers=admin_headers,
+                          json={"body": "  Проверить материал  "}).status_code == 201
+        assert admin.post(f"/api/orders/{order_id}/status", headers=admin_headers,
+                          json={"status": "IN_PRODUCTION"}).status_code == 200
+        timeline = admin.get(f"/api/orders/{order_id}/timeline").json()
+        assert timeline["total"] == 3
+        comment = next(item for item in timeline["items"] if item["kind"] == "comment")
+        assert comment["body"] == "Проверить материал"
+        assert comment["author"] == "Admin"
+        assert all(item["kind"] == "system" for item in timeline["items"] if item is not comment)
+        assert timeline["items"][-1]["event_type"] == "status_changed"
+        assert all(item["created_at"] for item in timeline["items"])
+        assert admin.post(f"/api/orders/{order_id}/comments", headers=admin_headers,
+                          json={"body": "   "}).status_code == 422
+        response = admin.post("/api/users", headers=admin_headers, json={
+            "username": "viewer", "display_name": "Viewer", "password": "viewer-password-123", "roles": ["VIEWER"]
+        })
+        assert response.status_code == 201
+        with TestClient(app) as viewer:
+            viewer_headers = login(viewer, "viewer", "viewer-password-123")
+            assert viewer.get(f"/api/orders/{order_id}/timeline").status_code == 200
+            assert viewer.post(f"/api/orders/{order_id}/comments", headers=viewer_headers,
+                               json={"body": "No"}).status_code == 403
