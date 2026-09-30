@@ -1,6 +1,6 @@
 # Task 014 — Employee Mobile UI
 
-status: pending  
+status: completed
 complexity: LOW  
 recommended_model: GPT-6 Luna
 reasoning: Medium
@@ -48,11 +48,11 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Интерфейс удобен на узком мобильном экране.
-- [ ] Worker может пройти основной production flow.
-- [ ] Следующая задача открывается корректно.
-- [ ] Admin-only функции отсутствуют у worker.
-- [ ] STATE.md обновлён.
+- [x] Интерфейс удобен на узком мобильном экране.
+- [x] Worker может пройти основной production flow.
+- [x] Следующая задача открывается корректно.
+- [x] Admin-only функции отсутствуют у worker.
+- [x] STATE.md обновлён.
 
 ## Completion
 

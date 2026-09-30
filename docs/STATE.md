@@ -17,10 +17,11 @@ Last updated: 2026-09-30
 - Task 011: normalized tariff timeline, current/next step and signed Decimal financial effect, mock scenario, queue display and finance permission filtering.
 - Task 012: Money at Risk totals by configurable local-time buckets, category split, finance-only paginated order drill-down, and conservative handling of unknown tariff costs.
 - Task 013: manager dashboard with risk, urgent order and task counts, attention list, staff workload, and filtered drill-downs.
+- Task 014: worker-first mobile navigation for My Tasks, Queue and Problems; priority-ranked Next Task selection using existing queue/claim APIs; compact worker cards and permission-aware financial detail visibility.
 
 ## Current
 
-- Task 013 complete. Apply migration `0011_tariff_engine` before starting the updated API; task 013 adds no migration.
+- Task 014 complete. Apply migration `0011_tariff_engine` before starting the updated API; task 014 adds no migration.
 
 ## Next
 
@@ -28,7 +29,7 @@ Last updated: 2026-09-30
 
 ## Known Issues
 
-- Docker is unavailable in this environment, so task 013 could not be checked against PostgreSQL/Compose.
+- Docker is unavailable in this environment, so PostgreSQL/Compose checks could not be run for tasks 013–014.
 - Browser UI smoke was not completed; mock dashboard API and filtered counts passed through TestClient.
 - Real Ozon tariff mapping remains pending official field/semantics verification during integration. No money at risk is inferred from order value or rates alone.
 - Photo upload infrastructure is not yet available; blocker responses reserve a `photos` field.
@@ -46,4 +47,4 @@ Last updated: 2026-09-30
 
 - Backend: 44 pytest tests passed; Ruff passed (SQLite test database).
 - Frontend: ESLint, TypeScript and Vite PWA build passed using `--configLoader runner`.
-- UI: local mock build opened; authenticated screen review was limited by in-app browser cookie handling.
+- UI: task 014 frontend lint, typecheck and production build passed; no browser mock smoke run because Docker is unavailable.

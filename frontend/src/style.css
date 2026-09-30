@@ -1,1 +1,28 @@
 @import "tailwindcss";
+
+.worker-nav {
+  position: fixed;
+  z-index: 20;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .5rem;
+  padding: .65rem max(.75rem, env(safe-area-inset-right)) calc(.65rem + env(safe-area-inset-bottom)) max(.75rem, env(safe-area-inset-left));
+  border-top: 1px solid #cbd5e1;
+  background: rgb(255 255 255 / .97);
+  box-shadow: 0 -4px 16px rgb(15 23 42 / .08);
+}
+
+.worker-nav button {
+  min-height: 3.25rem;
+  border-radius: .8rem;
+  background: #f1f5f9;
+  font-weight: 650;
+}
+
+.worker-nav button[aria-current="page"] {
+  background: #1e40af;
+  color: white;
+}
