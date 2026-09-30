@@ -1,6 +1,6 @@
 # Task 012 — Money at Risk
 
-status: pending  
+status: completed
 complexity: HIGH  
 recommended_model: GPT-6 Sol
 reasoning: Medium
