@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload
 from app.auth import Db, require
 from app.manager_tasks import ACTIVE_STATUSES, SEVERITIES, SOURCE_TYPES, STATUSES
 from app.models import AuditLog, ManagerTask, User, utc_now
+from app.procurement import sync_all_overdue
 from app.rbac import user_permissions
 
 router = APIRouter(prefix="/api/manager-tasks")
@@ -34,6 +35,8 @@ def list_tasks(db: Db, _actor: Annotated[User, Depends(require("manager_tasks.vi
             or (status is not None and status not in STATUSES)
             or not 1 <= limit <= 100 or offset < 0):
         raise HTTPException(422, "Invalid filter")
+    sync_all_overdue(db)
+    db.commit()
     query = select(ManagerTask)
     if severity:
         query = query.where(ManagerTask.severity == severity)
@@ -65,8 +68,8 @@ def update_task(task_id: int, payload: TaskUpdate, db: Db,
         raise HTTPException(409, "Manager task already closed")
     if payload.status == "IN_PROGRESS" and task.status != "OPEN":
         raise HTTPException(409, "Manager task already in progress")
-    if task.source_type == "BLOCKER" and payload.status == "RESOLVED":
-        raise HTTPException(409, "Resolve the blocker first")
+    if task.source_type in ("BLOCKER", "PROCUREMENT_OVERDUE") and payload.status == "RESOLVED":
+        raise HTTPException(409, "Resolve the source first")
     if payload.assigned_to is not None:
         assignee = db.get(User, payload.assigned_to)
         if assignee is None or not assignee.is_active or "manager_tasks.manage" not in user_permissions(assignee):

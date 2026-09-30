@@ -23,3 +23,7 @@ Blockers are separate records with fixed lifecycle states. The first blocker sto
 ## 007 — One manager task queue and source keyed rules
 
 Keep the manager task table created in task 006. A stable `(source_type, source_id)` key prevents duplicate tasks; rule callers synchronize active and resolved causes in their own database transaction. Blocker resolution closes its task, while managers cannot mark a blocker task resolved without closing the blocker. Manager task order links are optional for integration-wide causes. Dedicated backend permissions protect the manager queue and updates. Additional sources use this boundary when their underlying data and integrations arrive; no periodic worker is introduced for task 007.
+
+## 008 — Procurement links and overdue escalation
+
+Keep procurement tasks separate from blockers, with many-to-many links to orders and blockers. Delivery does not resolve blockers: staff confirm each underlying problem independently. Record procurement status and assignment changes in an append-only history and order timeline. High and critical overdue purchases use the existing manager-task source key `PROCUREMENT_OVERDUE` with the procurement task ID. The procurement and manager queues evaluate this rule on reads, and writes resolve it when delivery or cancellation removes the cause; no extra worker or manager-task table is needed.

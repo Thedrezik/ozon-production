@@ -11,10 +11,11 @@ Last updated: 2026-09-30
 - Task 005: comments with author/time, mentions-ready links, and unified order timeline for comments, statuses and assignments.
 - Task 006: production blockers, manager tasks, status restoration, timeline/audit and mobile problem actions.
 - Task 007: manager task queue, source-keyed deduplication and resolution boundary, manager permissions, filters and claim flow.
+- Task 008: procurement tasks, links to multiple orders and blockers, purchaser queue, history, overdue escalation through manager tasks, and mobile procurement screen.
 
 ## Current
 
-- Task 007 complete. Apply migration `0007_manager_tasks` before starting the updated API.
+- Task 008 complete. Apply migration `0008_procurement` before starting the updated API.
 
 ## Next
 
@@ -22,9 +23,9 @@ Last updated: 2026-09-30
 
 ## Known Issues
 
-- Docker is unavailable in this environment, so task 007 could not be checked against PostgreSQL/Compose. SQLite migration and model comparison passed.
+- Docker is unavailable in this environment, so task 008 could not be checked against PostgreSQL/Compose. SQLite migration and model comparison passed.
 - Photo upload infrastructure is not yet available; blocker responses reserve a `photos` field.
-- Rules for sources beyond blockers have a deduplicating rule boundary but await their source data and integrations.
+- Rules for sources beyond blockers and overdue procurement have a deduplicating rule boundary but await their source data and integrations.
 
 ## Ozon Integration
 
@@ -36,5 +37,5 @@ Last updated: 2026-09-30
 
 ## Last Tests
 
-- Backend: 19 pytest tests passed; Ruff passed; SQLite Alembic upgrade and `alembic check` passed.
+- Backend: 21 pytest tests passed; Ruff passed; SQLite Alembic upgrade and `alembic check` passed.
 - Frontend: ESLint, TypeScript and Vite PWA build passed using `--configLoader runner`.

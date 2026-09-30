@@ -1,6 +1,6 @@
 # Task 008 — Procurement Tasks
 
-status: pending  
+status: completed
 complexity: MEDIUM  
 recommended_model: GPT-6 Sol
 reasoning: Low
@@ -50,13 +50,13 @@ reasoning: Low
 
 ## Acceptance Criteria
 
-- [ ] Из blocker создаётся procurement task.
-- [ ] Закупка может быть связана с несколькими заказами.
-- [ ] Ответственный видит свои закупки.
-- [ ] Просрочка определяется корректно.
-- [ ] История изменений сохраняется.
-- [ ] Tests проходят.
-- [ ] STATE.md обновлён.
+- [x] Из blocker создаётся procurement task.
+- [x] Закупка может быть связана с несколькими заказами.
+- [x] Ответственный видит свои закупки.
+- [x] Просрочка определяется корректно.
+- [x] История изменений сохраняется.
+- [x] Tests проходят.
+- [x] STATE.md обновлён.
 
 ## Completion
 

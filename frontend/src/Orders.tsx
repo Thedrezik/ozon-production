@@ -6,7 +6,7 @@ type Page = { items: Order[]; total: number }
 type Assignee = { id: number; display_name: string; is_active: boolean; permissions: string[] }
 type Status = { code: string; display_name: string; sort_order: number }
 type TimelineItem = { id: string; kind: 'comment' | 'system'; body: string; author: string | null; created_at: string }
-type Blocker = { id: number; order_id: number; type_code: string; description: string; severity: string; status: string }
+type Blocker = { id: number; order_id: number; type_code: string; description: string; severity: string; status: string; expected_resolution_at: string | null }
 type BlockerType = { code: string; display_name: string }
 
 const labels: Record<string, string> = {
@@ -131,6 +131,25 @@ export function Orders({ current, mine }: { current: User; mine: boolean }) {
     finally { setBusy(null) }
   }
 
+  async function createProcurement(blocker: Blocker, order: Order) {
+    const material = window.prompt('Какой материал нужен?', blocker.description)
+    if (!material?.trim()) return
+    const quantity = window.prompt('Количество', '1')
+    if (quantity === null) return
+    const unit = window.prompt('Единица измерения', 'шт.')
+    if (!unit?.trim()) return
+    setBusy(blocker.order_id)
+    try {
+      await request('/procurement', { method: 'POST', body: JSON.stringify({
+        material_name: material, quantity, unit, description: blocker.description,
+        severity: blocker.severity, blocker_ids: [blocker.id], order_ids: [blocker.order_id],
+        needed_by: blocker.expected_resolution_at ?? order.shipment_deadline,
+      }) }, current.csrf_token)
+      setError('Закупка создана. Отслеживайте её на экране «Закупки».')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось создать закупку') }
+    finally { setBusy(null) }
+  }
+
   function actions(order: Order): { label: string; status: string }[] {
     const own = order.assigned_user?.id === current.id
     if (!canAssign && !own) return []
@@ -157,7 +176,7 @@ export function Orders({ current, mine }: { current: User; mine: boolean }) {
         {actions(order).map(action => <button key={action.status} disabled={busy === order.id} onClick={() => void act(order, 'status', action.status)} className="min-h-12 rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white disabled:opacity-50">{action.label}</button>)}
         {current.permissions.includes('blockers.create') && ['QUEUED', 'SENT_TO_PRODUCTION', 'IN_PRODUCTION', 'QUALITY_CHECK', 'BLOCKED'].includes(order.internal_status) && <button onClick={() => setProblemOrder(order.id)} className="min-h-12 rounded-xl border border-red-300 px-4 py-3 font-semibold text-red-800">Проблема</button>}
       </div>{problemOrder === order.id && <form onSubmit={event => void createProblem(event)} className="mt-3 space-y-2 rounded-xl bg-red-50 p-3"><label className="block text-sm">Тип проблемы<select value={problemType} onChange={event => setProblemType(event.target.value)} className="mt-1 w-full rounded-xl border p-3">{blockerTypes.map(type => <option key={type.code} value={type.code}>{type.display_name}</option>)}</select></label><label className="block text-sm">Что случилось<textarea required maxLength={5000} value={problemDescription} onChange={event => setProblemDescription(event.target.value)} className="mt-1 w-full rounded-xl border p-3" /></label><button disabled={busy === order.id || !problemDescription.trim()} className="min-h-12 rounded-xl bg-red-700 px-4 py-3 font-semibold text-white">Сообщить о проблеме</button></form>}
-      {blockers.filter(blocker => blocker.order_id === order.id).map(blocker => <div key={blocker.id} className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3"><p className="font-semibold">Проблема #{blocker.id} · {blockerTypes.find(type => type.code === blocker.type_code)?.display_name ?? blocker.type_code} · {blocker.status}</p><p>{blocker.description}</p>{current.permissions.includes('blockers.resolve') && ['OPEN', 'IN_PROGRESS'].includes(blocker.status) && <div className="mt-2 flex gap-2">{blocker.status === 'OPEN' && <button disabled={busy === order.id} onClick={() => void updateProblem(blocker, 'IN_PROGRESS')} className="min-h-11 rounded-xl border p-2">Взять в работу</button>}<button disabled={busy === order.id} onClick={() => void updateProblem(blocker, 'RESOLVED')} className="min-h-11 rounded-xl bg-emerald-700 p-2 text-white">Решить</button><button disabled={busy === order.id} onClick={() => void updateProblem(blocker, 'CANCELLED')} className="min-h-11 rounded-xl border p-2">Отменить</button></div>}</div>)}
+      {blockers.filter(blocker => blocker.order_id === order.id).map(blocker => <div key={blocker.id} className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3"><p className="font-semibold">Проблема #{blocker.id} · {blockerTypes.find(type => type.code === blocker.type_code)?.display_name ?? blocker.type_code} · {blocker.status}</p><p>{blocker.description}</p>{current.permissions.includes('procurement.create') && ['OPEN', 'IN_PROGRESS'].includes(blocker.status) && <button disabled={busy === order.id} onClick={() => void createProcurement(blocker, order)} className="mt-2 min-h-11 rounded-xl border border-blue-700 px-3 text-blue-800">Создать закупку</button>}{current.permissions.includes('blockers.resolve') && ['OPEN', 'IN_PROGRESS'].includes(blocker.status) && <div className="mt-2 flex gap-2">{blocker.status === 'OPEN' && <button disabled={busy === order.id} onClick={() => void updateProblem(blocker, 'IN_PROGRESS')} className="min-h-11 rounded-xl border p-2">Взять в работу</button>}<button disabled={busy === order.id} onClick={() => void updateProblem(blocker, 'RESOLVED')} className="min-h-11 rounded-xl bg-emerald-700 p-2 text-white">Решить</button><button disabled={busy === order.id} onClick={() => void updateProblem(blocker, 'CANCELLED')} className="min-h-11 rounded-xl border p-2">Отменить</button></div>}</div>)}
       {canAssign && !['DONE', 'CANCELLED'].includes(order.internal_status) && <label className="mt-4 block text-sm">Назначить сотрудника<select value={order.assigned_user?.id ?? ''} disabled={busy === order.id} onChange={event => void act(order, 'assignment', event.target.value ? Number(event.target.value) : null)} className="mt-1 w-full rounded-xl border p-3"><option value="">Не назначен</option>{assignees.map(user => <option key={user.id} value={user.id}>{user.display_name}</option>)}</select></label>}<OrderTimeline orderId={order.id} current={current}/>
     </article>)}
     <div className="flex items-center justify-between"><button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 20))} className="rounded-xl border bg-white px-4 py-3 disabled:opacity-40">Назад</button><span className="text-sm">{page.total ? `${offset + 1}–${Math.min(offset + 20, page.total)} из ${page.total}` : '0 заказов'}</span><button disabled={offset + 20 >= page.total} onClick={() => setOffset(offset + 20)} className="rounded-xl border bg-white px-4 py-3 disabled:opacity-40">Далее</button></div>

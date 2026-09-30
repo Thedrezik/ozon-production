@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -223,3 +225,50 @@ class ManagerTask(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     order: Mapped[Order | None] = relationship()
     assignee: Mapped[User | None] = relationship(foreign_keys=[assigned_to])
+
+
+class ProcurementTask(Base):
+    __tablename__ = "procurement_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    material_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    unit: Mapped[str] = mapped_column(String(40), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, default="MEDIUM")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True, default="NEW")
+    responsible_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    needed_by: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    ordered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    purchased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    responsible_user: Mapped[User | None] = relationship()
+    order_links: Mapped[list["ProcurementOrderLink"]] = relationship(cascade="all, delete-orphan")
+    blocker_links: Mapped[list["ProcurementBlockerLink"]] = relationship(cascade="all, delete-orphan")
+
+
+class ProcurementOrderLink(Base):
+    __tablename__ = "procurement_order_links"
+    task_id: Mapped[int] = mapped_column(ForeignKey("procurement_tasks.id", ondelete="CASCADE"), primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), primary_key=True)
+
+
+class ProcurementBlockerLink(Base):
+    __tablename__ = "procurement_blocker_links"
+    task_id: Mapped[int] = mapped_column(ForeignKey("procurement_tasks.id", ondelete="CASCADE"), primary_key=True)
+    blocker_id: Mapped[int] = mapped_column(ForeignKey("blockers.id", ondelete="CASCADE"), primary_key=True)
+
+
+class ProcurementHistory(Base):
+    __tablename__ = "procurement_history"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("procurement_tasks.id", ondelete="CASCADE"), index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    old_status: Mapped[str | None] = mapped_column(String(20))
+    new_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    actor: Mapped[User | None] = relationship()
