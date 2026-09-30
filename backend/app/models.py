@@ -1,6 +1,14 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -73,3 +81,57 @@ class AuditLog(Base):
     target_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    posting_number: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    ozon_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    internal_status: Mapped[str] = mapped_column(ForeignKey("internal_statuses.name"), nullable=False, index=True)
+    shipment_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    is_mock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
+    assignment: Mapped["Assignment | None"] = relationship(back_populates="order", uselist=False, cascade="all, delete-orphan")
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    product_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    order: Mapped[Order] = relationship(back_populates="items")
+
+
+class InternalStatus(Base):
+    __tablename__ = "internal_statuses"
+
+    name: Mapped[str] = mapped_column(String(40), primary_key=True)
+
+
+class StatusHistory(Base):
+    __tablename__ = "status_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    old_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    new_status: Mapped[str] = mapped_column(ForeignKey("internal_statuses.name"), nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    changed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class Assignment(Base):
+    __tablename__ = "assignments"
+    __table_args__ = (UniqueConstraint("order_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    assigned_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    order: Mapped[Order] = relationship(back_populates="assignment")
+    user: Mapped[User] = relationship(foreign_keys=[user_id])

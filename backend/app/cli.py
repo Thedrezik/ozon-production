@@ -9,6 +9,7 @@ from app.auth import hash_password
 from app.config import get_settings
 from app.database import create_db_engine
 from app.models import AuditLog, Role, User
+from app.orders import seed_mock_orders
 
 
 def create_admin(username: str, display_name: str, password: str, db: Session) -> User:
@@ -36,7 +37,21 @@ def main() -> int:
     admin = commands.add_parser("create-admin", help="Create a super admin using an interactive password prompt")
     admin.add_argument("--username")
     admin.add_argument("--display-name")
+    commands.add_parser("seed-mock-orders", help="Create repeatable development orders (mock mode only)")
     args = parser.parse_args()
+    if args.command == "seed-mock-orders":
+        settings = get_settings()
+        if not settings.ozon_mock_mode or settings.app_env == "production":
+            print("Mock seed requires OZON_MOCK_MODE=true outside production", file=sys.stderr)
+            return 1
+        engine = create_db_engine(settings.database_url)
+        try:
+            with Session(engine) as db:
+                count = seed_mock_orders(db)
+        finally:
+            engine.dispose()
+        print(f"Created {count} mock orders")
+        return 0
     username = args.username or input("Username: ")
     display_name = args.display_name or input("Display name: ")
     password = getpass.getpass("Password (12+ characters): ")

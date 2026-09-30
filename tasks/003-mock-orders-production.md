@@ -1,5 +1,7 @@
 # Task 003 — Mock Orders and Production Queue
 
+Status: completed
+
 Complexity: MEDIUM/HIGH
 recommended_model: GPT-6 Sol
 reasoning: Medium
@@ -251,13 +253,13 @@ Manager:
 
 ## Acceptance Criteria
 
-- [ ] mock orders существуют
-- [ ] очередь работает
-- [ ] статусы работают
-- [ ] history сохраняется
-- [ ] assignment работает
-- [ ] permissions работают
-- [ ] mobile UI удобен
-- [ ] realtime update работает
-- [ ] tests проходят
-- [ ] STATE.md обновлён
+- [x] mock orders существуют
+- [x] очередь работает
+- [x] статусы работают
+- [x] history сохраняется
+- [x] assignment работает
+- [x] permissions работают
+- [x] mobile UI удобен
+- [x] realtime update работает
+- [x] tests проходят
+- [x] STATE.md обновлён

@@ -1,6 +1,6 @@
 # Ozon Production
 
-Mobile-first production management system. The current version includes authentication, users, backend RBAC, audit events, and Mock Mode. Orders and real Ozon integration come in later tasks.
+Mobile-first production management system with authentication, RBAC, mock orders, and a production queue. Real Ozon integration is not connected.
 
 ## Configure and run
 
@@ -12,6 +12,7 @@ docker compose build
 docker compose up -d
 docker compose exec backend alembic upgrade head
 docker compose exec -it backend python -m app.cli create-admin
+docker compose exec backend python -m app.cli seed-mock-orders
 docker compose ps
 ```
 
@@ -22,7 +23,7 @@ docker compose logs -f backend caddy postgres
 docker compose down
 ```
 
-`down` retains the database and other named volumes. Back up the PostgreSQL and uploads volumes before removing volumes or updating a live deployment.
+`seed-mock-orders` creates seven repeatable sample orders only with `OZON_MOCK_MODE=true` outside production. Run it again safely; existing samples remain untouched. `down` retains the database and other named volumes. Back up the PostgreSQL and uploads volumes before removing volumes or updating a live deployment.
 
 ## Development and checks
 
@@ -46,6 +47,6 @@ npm run typecheck
 npm run build
 ```
 
-On Windows use `.venv\Scripts\python`, `.venv\Scripts\uvicorn`, `.venv\Scripts\pytest`, and `.venv\Scripts\ruff` instead of `./.venv/bin/...`. The `0002_auth_rbac` migration adds user, role, permission, session, and audit tables. Set `APP_ENV=production` when serving over HTTPS so session cookies have the Secure flag. For local HTTP use `APP_ENV=development`. Use `npm run build -- --configLoader runner` on Windows if Vite's default config loader cannot access the project path.
+On Windows use `.venv\Scripts\python`, `.venv\Scripts\uvicorn`, `.venv\Scripts\pytest`, and `.venv\Scripts\ruff` instead of `./.venv/bin/...`. Migration `0003_mock_orders` adds orders, items, status history and assignments. Set `APP_ENV=production` when serving over HTTPS so session cookies have the Secure flag. For local HTTP use `APP_ENV=development`. Use `npm run build -- --configLoader runner` on Windows if Vite's default config loader cannot access the project path.
 
 Architecture and operational boundaries are described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). No real Ozon credentials are needed or used by this bootstrap.
