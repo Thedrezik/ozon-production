@@ -1,6 +1,6 @@
 # Task 007 — Automatic Manager Tasks
 
-status: pending  
+status: completed
 complexity: HIGH  
 recommended_model: GPT-6 Sol
 reasoning: Medium
@@ -53,13 +53,13 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Создание blocker автоматически создаёт одну ManagerTask.
-- [ ] Повторная обработка события не создаёт duplicate.
-- [ ] Руководитель получает задачу в своём списке.
-- [ ] Задачу можно взять в работу.
-- [ ] Решение blocker корректно закрывает связанную задачу.
-- [ ] Есть tests на deduplication.
-- [ ] STATE.md обновлён.
+- [x] Создание blocker автоматически создаёт одну ManagerTask.
+- [x] Повторная обработка события не создаёт duplicate.
+- [x] Руководитель получает задачу в своём списке.
+- [x] Задачу можно взять в работу.
+- [x] Решение blocker корректно закрывает связанную задачу.
+- [x] Есть tests на deduplication.
+- [x] STATE.md обновлён.
 
 ## Completion
 

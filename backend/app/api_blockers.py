@@ -7,11 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from app.auth import Db, require
+from app.manager_tasks import ensure_task, resolve_source
 from app.models import (
     AuditLog,
     Blocker,
     BlockerType,
-    ManagerTask,
     Order,
     OrderTimelineEvent,
     User,
@@ -22,23 +22,6 @@ from app.orders import transition
 router = APIRouter(prefix="/api/blockers")
 ACTIVE = ("OPEN", "IN_PROGRESS")
 BLOCKABLE = ("QUEUED", "SENT_TO_PRODUCTION", "IN_PRODUCTION", "QUALITY_CHECK")
-
-
-@router.get("/manager-tasks")
-def manager_tasks(db: Db, _actor: Annotated[User, Depends(require("orders.assign"))],
-                  status: str = "OPEN", limit: int = 50, offset: int = 0) -> dict:
-    if status not in ("OPEN", "RESOLVED") or not 1 <= limit <= 100 or offset < 0:
-        raise HTTPException(422, "Invalid filter")
-    rows = db.scalars(select(ManagerTask).options(joinedload(ManagerTask.order))
-                      .where(ManagerTask.status == status)
-                      .order_by(ManagerTask.created_at.desc(), ManagerTask.id.desc())
-                      .limit(limit).offset(offset)).all()
-    return {"items": [{"id": row.id, "source_type": row.source_type, "source_id": row.source_id,
-                       "order_id": row.order_id, "posting_number": row.order.posting_number,
-                       "title": row.title, "description": row.description,
-                       "severity": row.severity, "status": row.status,
-                       "assigned_to": row.assigned_to, "created_at": row.created_at,
-                       "due_at": row.due_at, "resolved_at": row.resolved_at} for row in rows]}
 
 
 class BlockerInput(BaseModel):
@@ -117,9 +100,9 @@ def create_blocker(payload: BlockerInput, db: Db, request: Request,
                   previous_production_status=previous)
     db.add(row)
     db.flush()
-    db.add(ManagerTask(source_type="BLOCKER", source_id=row.id, order_id=order.id,
-                       title=f"Проблема заказа {order.posting_number}", description=description,
-                       severity=payload.severity, status="OPEN", due_at=payload.expected_resolution_at))
+    ensure_task(db, source_type="BLOCKER", source_id=row.id, order_id=order.id,
+                title=f"Проблема заказа {order.posting_number}", description=description,
+                severity=payload.severity, due_at=payload.expected_resolution_at)
     if previous:
         transition(db, order, "BLOCKED", actor.id)
     db.add(OrderTimelineEvent(order_id=order.id, event_type="blocker_created",
@@ -151,11 +134,7 @@ def update_blocker(blocker_id: int, payload: BlockerUpdate, db: Db, request: Req
     row.updated_at = utc_now()
     if payload.status not in ACTIVE:
         row.resolved_at = row.updated_at
-        task = db.scalar(select(ManagerTask).where(ManagerTask.source_type == "BLOCKER",
-                                                  ManagerTask.source_id == row.id))
-        if task is not None:
-            task.status = "RESOLVED"
-            task.resolved_at = row.updated_at
+        resolve_source(db, source_type="BLOCKER", source_id=row.id)
         db.flush()
         remaining = db.scalar(select(Blocker.id).where(Blocker.order_id == order_id,
                                                          Blocker.status.in_(ACTIVE)).limit(1))

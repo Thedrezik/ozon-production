@@ -10,10 +10,11 @@ Last updated: 2026-09-30
 - Task 004: full production transitions, configurable status labels/order, stage timestamps and cycle-time data.
 - Task 005: comments with author/time, mentions-ready links, and unified order timeline for comments, statuses and assignments.
 - Task 006: production blockers, manager tasks, status restoration, timeline/audit and mobile problem actions.
+- Task 007: manager task queue, source-keyed deduplication and resolution boundary, manager permissions, filters and claim flow.
 
 ## Current
 
-- Task 006 complete. Apply migration `0006_blockers` before starting the updated API.
+- Task 007 complete. Apply migration `0007_manager_tasks` before starting the updated API.
 
 ## Next
 
@@ -21,8 +22,9 @@ Last updated: 2026-09-30
 
 ## Known Issues
 
-- Docker is unavailable in this environment, so task 006 was not checked against PostgreSQL/Compose. SQLite migration and model comparison passed.
+- Docker is unavailable in this environment, so task 007 could not be checked against PostgreSQL/Compose. SQLite migration and model comparison passed.
 - Photo upload infrastructure is not yet available; blocker responses reserve a `photos` field.
+- Rules for sources beyond blockers have a deduplicating rule boundary but await their source data and integrations.
 
 ## Ozon Integration
 
@@ -34,5 +36,5 @@ Last updated: 2026-09-30
 
 ## Last Tests
 
-- Backend: 17 pytest tests passed; Ruff passed; SQLite Alembic upgrade and `alembic check` passed.
+- Backend: 19 pytest tests passed; Ruff passed; SQLite Alembic upgrade and `alembic check` passed.
 - Frontend: ESLint, TypeScript and Vite PWA build passed using `--configLoader runner`.

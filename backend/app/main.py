@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api_auth import router as auth_router
 from app.api_blockers import router as blockers_router
+from app.api_manager_tasks import router as manager_tasks_router
 from app.api_orders import router as orders_router
 from app.config import Settings, get_settings
 from app.database import create_db_engine, database_is_ready
@@ -32,6 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(orders_router)
     app.include_router(blockers_router)
+    app.include_router(manager_tasks_router)
 
     @app.get("/api/health")
     def health() -> dict[str, str | bool]:

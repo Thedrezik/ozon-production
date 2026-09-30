@@ -32,8 +32,8 @@ def test_blocker_lifecycle_and_permissions(tmp_path):
             viewer_headers = login(viewer, "viewer", "viewer-password-123")
             assert viewer.get(f"/api/blockers?order_id={order_id}").status_code == 200
             assert viewer.post("/api/blockers", headers=viewer_headers, json=payload).status_code == 403
-            assert viewer.get("/api/blockers/manager-tasks").status_code == 403
-        assert len(admin.get("/api/blockers/manager-tasks").json()["items"]) == 2
+            assert viewer.get("/api/manager-tasks").status_code == 403
+        assert len(admin.get("/api/manager-tasks").json()["items"]) == 2
         assert admin.get("/api/orders?blocked=true").json()["total"] == 2
         assert admin.post(f"/api/orders/{order_id}/status", headers=headers,
                           json={"status": "IN_PRODUCTION"}).status_code == 409
@@ -41,7 +41,7 @@ def test_blocker_lifecycle_and_permissions(tmp_path):
         assert admin.patch("/api/blockers/1", headers=headers, json={"status": "RESOLVED"}).status_code == 200
         assert admin.get("/api/orders?status=BLOCKED").json()["total"] == 2
         assert admin.patch("/api/blockers/2", headers=headers, json={"status": "RESOLVED"}).status_code == 200
-        assert admin.get("/api/blockers/manager-tasks").json()["items"] == []
+        assert admin.get("/api/manager-tasks?status=OPEN").json()["items"] == []
         with Session(app.state.engine) as db:
             assert db.get(Order, order_id).internal_status == "QUEUED"
             assert len(db.scalars(select(Blocker).where(Blocker.order_id == order_id)).all()) == 2
