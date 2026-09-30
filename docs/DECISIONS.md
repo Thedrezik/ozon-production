@@ -27,3 +27,7 @@ Keep the manager task table created in task 006. A stable `(source_type, source_
 ## 008 — Procurement links and overdue escalation
 
 Keep procurement tasks separate from blockers, with many-to-many links to orders and blockers. Delivery does not resolve blockers: staff confirm each underlying problem independently. Record procurement status and assignment changes in an append-only history and order timeline. High and critical overdue purchases use the existing manager-task source key `PROCUREMENT_OVERDUE` with the procurement task ID. The procurement and manager queues evaluate this rule on reads, and writes resolve it when delivery or cancellation removes the cause; no extra worker or manager-task table is needed.
+
+## 009 — Product production profiles
+
+Store one normative profile per `offer_id` and/or SKU, with unique identifiers and `offer_id` taking precedence when matching an order item. Profiles are administered through a dedicated backend permission and audited. Order item identifiers remain nullable so orders without catalog identifiers or a configured profile continue to work; no scheduler or separate MES is introduced. Existing order stage timestamps remain the source for later actual-time comparisons.

@@ -111,8 +111,29 @@ class OrderItem(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
     product_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    offer_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    sku: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     order: Mapped[Order] = relationship(back_populates="items")
+
+
+class ProductProductionProfile(Base):
+    __tablename__ = "product_production_profiles"
+    __table_args__ = (
+        UniqueConstraint("offer_id"),
+        UniqueConstraint("sku"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    offer_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    sku: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    product_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    production_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    packing_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    complexity: Mapped[str] = mapped_column(String(20), nullable=False)
+    production_group: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class InternalStatus(Base):

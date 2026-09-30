@@ -10,6 +10,7 @@ PERMISSIONS = (
     "procurement.view", "procurement.create", "procurement.manage", "finance.view",
     "users.view", "users.create", "users.manage", "roles.manage", "settings.manage",
     "analytics.view", "audit.view",
+    "product_profiles.manage",
 )
 
 ROLE_PERMISSIONS = {

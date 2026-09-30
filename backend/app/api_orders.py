@@ -17,6 +17,7 @@ from app.models import (
     InternalStatus,
     Order,
     OrderTimelineEvent,
+    ProductProductionProfile,
     Role,
     StatusHistory,
     User,
@@ -50,7 +51,14 @@ def order_query():
     return select(Order).options(selectinload(Order.items), joinedload(Order.assignment).joinedload(Assignment.user))
 
 
-def order_data(order: Order) -> dict:
+def production_profiles(db: Db) -> dict[tuple[str, str], ProductProductionProfile]:
+    profiles = db.scalars(select(ProductProductionProfile)).all()
+    return {(key, value): profile for profile in profiles
+            for key, value in (("offer_id", profile.offer_id), ("sku", profile.sku)) if value}
+
+
+def order_data(order: Order, profiles: dict[tuple[str, str], ProductProductionProfile] | None = None) -> dict:
+    profiles = profiles or {}
     return {
         "id": order.id, "posting_number": order.posting_number,
         "ozon_status": order.ozon_status, "internal_status": order.internal_status,
@@ -61,7 +69,15 @@ def order_data(order: Order) -> dict:
         "handed_to_shipping_at": order.handed_to_shipping_at,
         "done_at": order.done_at,
         "shipment_deadline": order.shipment_deadline, "items": [
-            {"product_name": item.product_name, "quantity": item.quantity} for item in order.items
+            {"product_name": item.product_name, "offer_id": item.offer_id, "sku": item.sku,
+             "quantity": item.quantity,
+             "production_profile": (
+                 {"product_name": profile.product_name, "production_minutes": profile.production_minutes,
+                  "packing_minutes": profile.packing_minutes, "complexity": profile.complexity,
+                  "production_group": profile.production_group}
+                 if (profile := profiles.get(("offer_id", item.offer_id)) if item.offer_id else None)
+                 or (profile := profiles.get(("sku", item.sku)) if item.sku else None) else None
+             )} for item in order.items
         ],
         "assigned_user": ({"id": order.assignment.user.id, "display_name": order.assignment.user.display_name}
                           if order.assignment else None),
@@ -120,7 +136,8 @@ def list_orders(
         return {"items": [], "total": total}
     orders = db.scalars(order_query().where(Order.id.in_(ids))).all()
     by_id = {order.id: order for order in orders}
-    return {"items": [order_data(by_id[order_id]) for order_id in ids], "total": total}
+    profile_map = production_profiles(db)
+    return {"items": [order_data(by_id[order_id], profile_map) for order_id in ids], "total": total}
 
 
 @router.get("/events")
@@ -230,7 +247,7 @@ def claim(order_id: int, db: Db, actor: Annotated[User, Depends(require("orders.
     db.add(AuditLog(actor_user_id=actor.id, action="order.claimed", detail=order.posting_number))
     db.commit()
     request.app.state.order_events.publish(order_id)
-    return order_data(db.scalar(order_query().where(Order.id == order_id)))
+    return order_data(db.scalar(order_query().where(Order.id == order_id)), production_profiles(db))
 
 
 @router.put("/{order_id}/assignment")
@@ -261,7 +278,7 @@ def assign(order_id: int, payload: AssignmentInput, db: Db, request: Request,
     db.add(AuditLog(actor_user_id=actor.id, action="order.assigned", detail=order.posting_number))
     db.commit()
     request.app.state.order_events.publish(order_id)
-    return order_data(db.scalar(order_query().where(Order.id == order_id)))
+    return order_data(db.scalar(order_query().where(Order.id == order_id)), production_profiles(db))
 
 
 @router.post("/{order_id}/status")
@@ -290,4 +307,4 @@ def change_status(order_id: int, payload: StatusInput, db: Db, request: Request,
     db.add(AuditLog(actor_user_id=actor.id, action="order.status_changed", detail=order.posting_number))
     db.commit()
     request.app.state.order_events.publish(order_id)
-    return order_data(db.scalar(order_query().where(Order.id == order_id)))
+    return order_data(db.scalar(order_query().where(Order.id == order_id)), production_profiles(db))
