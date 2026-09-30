@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     ForeignKey,
@@ -97,6 +98,7 @@ class Order(Base):
     tariff_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     tariff_impact: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     order_value: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    tariff_steps: Mapped[list[dict] | None] = mapped_column(JSON)
     priority_override: Mapped[str | None] = mapped_column(String(2))
     priority_pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_mock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

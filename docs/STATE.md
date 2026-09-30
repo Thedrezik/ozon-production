@@ -14,10 +14,11 @@ Last updated: 2026-09-30
 - Task 008: procurement tasks, links to multiple orders and blockers, purchaser queue, history, overdue escalation through manager tasks, and mobile procurement screen.
 - Task 009: product production profiles by offer_id/SKU, admin CRUD, audit, and order normative-time display.
 - Task 010: explainable production priority, confirmed tariff and value inputs, feasibility, blocked flag, audited manual override/pin, configurable weights, and ranked queue.
+- Task 011: normalized tariff timeline, current/next step and signed Decimal financial effect, mock scenario, queue display and finance permission filtering.
 
 ## Current
 
-- Task 010 complete. Apply migration `0010_priority_engine` before starting the updated API.
+- Task 011 complete. Apply migration `0011_tariff_engine` before starting the updated API.
 
 ## Next
 
@@ -25,8 +26,8 @@ Last updated: 2026-09-30
 
 ## Known Issues
 
-- Docker is unavailable in this environment, so task 010 could not be checked against PostgreSQL/Compose. SQLite migration and model comparison passed.
-- Tariff deadline, confirmed tariff impact, and order value stay unknown for real orders until the Ozon integration supplies them. No money at risk is inferred from order value.
+- Docker is unavailable in this environment, so task 011 could not be checked against PostgreSQL/Compose. SQLite migration and model comparison passed.
+- Real Ozon tariff mapping remains pending official field/semantics verification during integration. No money at risk is inferred from order value or rates alone.
 - Photo upload infrastructure is not yet available; blocker responses reserve a `photos` field.
 - Rules for sources beyond blockers and overdue procurement have a deduplicating rule boundary but await their source data and integrations.
 
@@ -40,5 +41,5 @@ Last updated: 2026-09-30
 
 ## Last Tests
 
-- Backend: 29 pytest tests passed; Ruff passed; SQLite Alembic upgrade and `alembic check` passed.
+- Backend: 37 pytest tests passed; Ruff passed; SQLite Alembic upgrade and `alembic check` passed.
 - Frontend: ESLint, TypeScript and Vite PWA build passed using `--configLoader runner`.

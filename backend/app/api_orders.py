@@ -29,6 +29,8 @@ from app.models import (
 from app.orders import STATUSES, transition
 from app.priority import PriorityInput, PriorityWeights, evaluate, sort_key
 from app.rbac import user_permissions
+from app.tariff import evaluate as evaluate_tariff
+from app.tariff import parse_normalized_steps
 
 router = APIRouter(prefix="/api/orders")
 
@@ -92,16 +94,28 @@ def priority_for(order: Order, profiles: dict, settings: PrioritySettings, now) 
         else:
             minutes = profile.production_minutes + profile.packing_minutes
         remaining += minutes * item.quantity
+    tariff = tariff_for(order, now)
+    next_step = tariff["next"] if tariff else None
+    delta = tariff["delta_to_next_tariff"] if tariff else None
     return evaluate(PriorityInput(
         shipment_deadline=utc(order.shipment_deadline),
         shipment_date_without_delay=utc(order.shipment_date_without_delay),
-        tariff_deadline=utc(order.tariff_deadline), tariff_impact=order.tariff_impact,
+        tariff_deadline=next_step["starts_at"] if next_step else
+        (utc(order.tariff_deadline) if tariff is None else None),
+        tariff_impact=max(delta, Decimal(0)) if delta is not None and next_step["currency"] == "RUB" else
+        (order.tariff_impact if tariff is None else None),
         order_value=order.order_value, internal_status=order.internal_status,
         remaining_minutes=remaining if known else None,
         blocked=order.internal_status == "BLOCKED", override=order.priority_override,
         pinned=order.priority_pinned), now,
         PriorityWeights(settings.deadline_weight, settings.tariff_weight, settings.finance_weight,
                         settings.feasibility_weight, settings.high_impact_rub, settings.high_value_rub))
+
+
+def tariff_for(order: Order, now) -> dict | None:
+    if order.tariff_steps is None:
+        return None
+    return evaluate_tariff(parse_normalized_steps(order.tariff_steps), now)
 
 
 def production_profiles(db: Db) -> dict[tuple[str, str], ProductProductionProfile]:
@@ -111,7 +125,7 @@ def production_profiles(db: Db) -> dict[tuple[str, str], ProductProductionProfil
 
 
 def order_data(order: Order, profiles: dict[tuple[str, str], ProductProductionProfile] | None = None,
-               priority: dict | None = None) -> dict:
+               priority: dict | None = None, tariff: dict | None = None) -> dict:
     profiles = profiles or {}
     return {
         "id": order.id, "posting_number": order.posting_number,
@@ -124,7 +138,7 @@ def order_data(order: Order, profiles: dict[tuple[str, str], ProductProductionPr
         "done_at": order.done_at,
         "shipment_deadline": order.shipment_deadline,
         "shipment_date_without_delay": order.shipment_date_without_delay,
-        "tariff_deadline": order.tariff_deadline, "priority": priority, "items": [
+        "tariff_deadline": order.tariff_deadline, "priority": priority, "tariff": tariff, "items": [
             {"product_name": item.product_name, "offer_id": item.offer_id, "sku": item.sku,
              "quantity": item.quantity,
              "production_profile": (
@@ -203,7 +217,19 @@ def list_orders(
         return {**priority, "financial_impact": None,
                 "reasons": [reason for reason in priority["reasons"]
                             if not reason.startswith(("Подтверждённый эффект тарифа:", "Стоимость заказа:"))]}
-    return {"items": [order_data(order, profile_map, visible_priority(priority))
+    def visible_tariff(order):
+        tariff = tariff_for(order, now)
+        if tariff is None or can_view_finance:
+            return tariff
+        def without_money(step):
+            return {**step, "cost": None} if step else None
+        return {**tariff, "current": without_money(tariff["current"]),
+                "next": without_money(tariff["next"]),
+                "timeline": [without_money(step) for step in tariff["timeline"]],
+                "current_tariff_cost": None, "next_tariff_cost": None,
+                "delta_to_next_tariff": None, "potential_saving": None, "potential_loss": None}
+
+    return {"items": [order_data(order, profile_map, visible_priority(priority), visible_tariff(order))
                       for order, priority in ranked[offset:offset + limit]],
             "total": total}
 

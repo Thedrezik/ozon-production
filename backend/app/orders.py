@@ -67,8 +67,15 @@ def seed_mock_orders(db: Session) -> int:
             continue
         order = Order(posting_number=posting, ozon_status=ozon_status, internal_status=status,
                       shipment_deadline=now + timedelta(hours=hours), is_mock=True,
-                      tariff_deadline=now + timedelta(minutes=75) if key == "near-deadline" else None,
-                      tariff_impact=Decimal(640) if key == "near-deadline" else None,
+                      tariff_steps=[
+                          {"starts_at": None, "tariff_type": "discount", "rate_percent": "-2",
+                           "cost": "-120.00", "currency": "RUB"},
+                          {"starts_at": (now + timedelta(minutes=75)).isoformat(),
+                           "tariff_type": "standard", "rate_percent": "0", "cost": "0.00", "currency": "RUB"},
+                          {"starts_at": (now + timedelta(hours=5)).isoformat(),
+                           "tariff_type": "surcharge", "rate_percent": "3",
+                           "cost": "350.00", "currency": "RUB"},
+                      ] if key == "near-deadline" else None,
                       order_value=Decimal(12000) if key == "near-deadline" else None,
                       items=[OrderItem(product_name=product, quantity=quantity)])
         db.add(order)

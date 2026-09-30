@@ -3,7 +3,9 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 type User = { id: number; csrf_token?: string; permissions: string[] }
 type Priority = { level: string; label: string; score: number; reasons: string[]; blocked: boolean; feasible: boolean | null; pinned: boolean; manual_override: string | null }
 type PrioritySettings = { deadline_weight: number; tariff_weight: number; finance_weight: number; feasibility_weight: number; high_impact_rub: string; high_value_rub: string }
-type Order = { id: number; posting_number: string; shipment_deadline: string; internal_status: string; ozon_status: string; priority: Priority | null; items: { product_name: string; quantity: number; production_profile: { production_minutes: number; packing_minutes: number; complexity: string; production_group: string | null } | null }[]; assigned_user: { id: number; display_name: string } | null }
+type TariffStep = { starts_at: string | null; tariff_type: string; rate_percent: string | null; cost: string | null; currency: string | null }
+type Tariff = { current: TariffStep | null; next: TariffStep | null; timeline: TariffStep[]; delta_to_next_tariff: string | null; potential_saving: string | null; potential_loss: string | null }
+type Order = { id: number; posting_number: string; shipment_deadline: string; internal_status: string; ozon_status: string; priority: Priority | null; tariff: Tariff | null; items: { product_name: string; quantity: number; production_profile: { production_minutes: number; packing_minutes: number; complexity: string; production_group: string | null } | null }[]; assigned_user: { id: number; display_name: string } | null }
 type Page = { items: Order[]; total: number }
 type Assignee = { id: number; display_name: string; is_active: boolean; permissions: string[] }
 type Status = { code: string; display_name: string; sort_order: number }
@@ -15,6 +17,16 @@ const labels: Record<string, string> = {
   NEW: 'Новый', QUEUED: 'В очереди', SENT_TO_PRODUCTION: 'Передан в производство',
   IN_PRODUCTION: 'В производстве', BLOCKED: 'Проблема', PRODUCED: 'Произведён',
   QUALITY_CHECK: 'Проверка качества', PACKING: 'Упаковка', READY_TO_SHIP: 'Готов к отгрузке', HANDED_TO_SHIPPING: 'Передан в доставку', DONE: 'Завершён', CANCELLED: 'Отменён',
+}
+
+function TariffTimeline({ tariff }: { tariff: Tariff }) {
+  const signed = (value: string, currency: string | null) => `${value.startsWith('-') ? '' : '+'}${value} ${currency === 'RUB' ? '₽' : currency ?? ''}`
+  return <details className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-sm">
+    <summary className="font-semibold">Тариф: {tariff.current?.tariff_type ?? 'неизвестен'}{tariff.next?.starts_at ? ` · следующая ступень ${new Date(tariff.next.starts_at).toLocaleString('ru-RU')}` : ''}</summary>
+    {tariff.delta_to_next_tariff !== null && <p className="mt-2">Изменение стоимости: {signed(tariff.delta_to_next_tariff, tariff.next?.currency ?? null)}</p>}
+    {tariff.delta_to_next_tariff === null && tariff.next && <p className="mt-2">Денежный эффект неизвестен</p>}
+    <ol className="mt-2 space-y-1">{tariff.timeline.map((step, index) => <li key={index}>{step.starts_at ? new Date(step.starts_at).toLocaleString('ru-RU') : 'Сначала'}: {step.tariff_type}{step.rate_percent !== null ? ` · ${step.rate_percent}%` : ''}{step.cost !== null ? ` · ${signed(step.cost, step.currency)}` : ''}</li>)}</ol>
+  </details>
 }
 
 async function request<T>(path: string, options: RequestInit = {}, csrf?: string): Promise<T> {
@@ -197,6 +209,7 @@ export function Orders({ current, mine }: { current: User; mine: boolean }) {
     {!page.items.length && <p className="rounded-xl bg-white p-5">Заказов нет.</p>}
     {page.items.map(order => <article key={order.id} className="rounded-2xl border bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">{order.items.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</h3><p className="mt-1 text-sm text-slate-600">{order.posting_number}</p>{order.items.some(item => item.production_profile) && <p className="mt-2 text-sm text-slate-600">Норматив: {order.items.filter(item => item.production_profile).map(item => `${item.production_profile!.production_minutes} мин производство + ${item.production_profile!.packing_minutes} мин упаковка${item.quantity > 1 ? ` × ${item.quantity}` : ''}`).join('; ')}</p>}</div><span className="rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-900">{statuses.find(entry => entry.code === order.internal_status)?.display_name ?? labels[order.internal_status]}</span></div>
       {order.priority && <div className={`mt-3 rounded-xl border p-3 ${order.priority.blocked ? 'border-red-300 bg-red-50' : order.priority.level === 'P0' ? 'border-red-300 bg-red-50' : order.priority.level === 'P1' ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}><p className="font-bold">{order.priority.level} · {order.priority.label}{order.priority.blocked ? ' · Заблокирован' : ''}{order.priority.pinned ? ' · Закреплён' : ''}</p><ul className="mt-2 list-disc pl-5 text-sm">{order.priority.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul></div>}
+      {order.tariff && <TariffTimeline tariff={order.tariff} />}
       <p className="mt-3 text-sm">Отгрузить до: <strong>{new Date(order.shipment_deadline).toLocaleString('ru-RU')}</strong></p><p className="mt-1 text-sm">Ответственный: {order.assigned_user?.display_name || 'Не назначен'}</p>
       {current.permissions.includes('orders.change_priority') && order.priority && !['DONE', 'CANCELLED', 'HANDED_TO_SHIPPING'].includes(order.internal_status) && <div className="mt-3 flex flex-wrap gap-3"><label className="text-sm">Ручной приоритет<select aria-label={`Приоритет ${order.posting_number}`} value={order.priority.manual_override ?? ''} disabled={busy === order.id} onChange={event => void changePriority(order, event.target.value || null, order.priority!.pinned)} className="ml-2 min-h-11 rounded-lg border p-2"><option value="">Автоматический</option>{['P0', 'P1', 'P2', 'P3', 'P4'].map(level => <option key={level} value={level}>{level}</option>)}</select></label><button disabled={busy === order.id} onClick={() => void changePriority(order, order.priority!.manual_override, !order.priority!.pinned)} className="min-h-11 rounded-lg border px-3">{order.priority.pinned ? 'Открепить' : 'Закрепить'}</button></div>}
       <div className="mt-4 grid gap-2 sm:grid-cols-2">{!order.assigned_user && ['NEW', 'QUEUED', 'SENT_TO_PRODUCTION'].includes(order.internal_status) && <button disabled={busy === order.id} onClick={() => void act(order, 'claim')} className="min-h-12 rounded-xl bg-blue-800 px-4 py-3 font-semibold text-white disabled:opacity-50">Взять в работу</button>}
