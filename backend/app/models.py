@@ -93,6 +93,12 @@ class Order(Base):
     ozon_status: Mapped[str] = mapped_column(String(40), nullable=False)
     internal_status: Mapped[str] = mapped_column(ForeignKey("internal_statuses.name"), nullable=False, index=True)
     shipment_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    shipment_date_without_delay: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    tariff_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    tariff_impact: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    order_value: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    priority_override: Mapped[str | None] = mapped_column(String(2))
+    priority_pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_mock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     production_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -103,6 +109,18 @@ class Order(Base):
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
     assignment: Mapped["Assignment | None"] = relationship(back_populates="order", uselist=False, cascade="all, delete-orphan")
+
+
+class PrioritySettings(Base):
+    __tablename__ = "priority_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    deadline_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=40)
+    tariff_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=25)
+    finance_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
+    feasibility_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=15)
+    high_impact_rub: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal(1000))
+    high_value_rub: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal(10000))
 
 
 class OrderItem(Base):

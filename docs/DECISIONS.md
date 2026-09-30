@@ -31,3 +31,7 @@ Keep procurement tasks separate from blockers, with many-to-many links to orders
 ## 009 — Product production profiles
 
 Store one normative profile per `offer_id` and/or SKU, with unique identifiers and `offer_id` taking precedence when matching an order item. Profiles are administered through a dedicated backend permission and audited. Order item identifiers remain nullable so orders without catalog identifiers or a configured profile continue to work; no scheduler or separate MES is introduced. Existing order stage timestamps remain the source for later actual-time comparisons.
+
+## 010 — Calculated production priority
+
+Calculate priority on queue reads in a pure service from one captured UTC time, confirmed order dates and money values, remaining profile norms, blocked state, and manual override. Store only source inputs and override, so the queue updates as deadlines approach without a scheduler or stale score column. Weights and value thresholds live in one audited settings row. An order value influences ordering modestly but is never reported as potential loss; tariff impact is shown only when a confirmed amount exists. The current in-process ranker evaluates filtered orders before pagination to keep global ordering exact; revisit SQL-side ranking if the queue grows beyond the small-VPS working set.

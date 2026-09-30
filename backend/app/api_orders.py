@@ -1,4 +1,6 @@
 import asyncio
+from datetime import timezone
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -17,6 +19,7 @@ from app.models import (
     InternalStatus,
     Order,
     OrderTimelineEvent,
+    PrioritySettings,
     ProductProductionProfile,
     Role,
     StatusHistory,
@@ -24,6 +27,7 @@ from app.models import (
     utc_now,
 )
 from app.orders import STATUSES, transition
+from app.priority import PriorityInput, PriorityWeights, evaluate, sort_key
 from app.rbac import user_permissions
 
 router = APIRouter(prefix="/api/orders")
@@ -47,8 +51,57 @@ class CommentInput(BaseModel):
     mention_user_ids: list[int] = Field(default_factory=list, max_length=50)
 
 
+class PriorityOverrideInput(BaseModel):
+    level: Literal["P0", "P1", "P2", "P3", "P4"] | None = None
+    pinned: bool = False
+
+
+class PrioritySettingsInput(BaseModel):
+    deadline_weight: int = Field(ge=0, le=100)
+    tariff_weight: int = Field(ge=0, le=100)
+    finance_weight: int = Field(ge=0, le=100)
+    feasibility_weight: int = Field(ge=0, le=100)
+    high_impact_rub: Decimal = Field(gt=0, le=1_000_000_000, max_digits=12, decimal_places=2)
+    high_value_rub: Decimal = Field(gt=0, le=1_000_000_000, max_digits=12, decimal_places=2)
+
+
 def order_query():
     return select(Order).options(selectinload(Order.items), joinedload(Order.assignment).joinedload(Assignment.user))
+
+
+def priority_settings(db: Db) -> PrioritySettings:
+    return db.get(PrioritySettings, 1) or PrioritySettings(
+        id=1, deadline_weight=40, tariff_weight=25, finance_weight=20,
+        feasibility_weight=15, high_impact_rub=Decimal(1000), high_value_rub=Decimal(10000))
+
+
+def priority_for(order: Order, profiles: dict, settings: PrioritySettings, now) -> dict:
+    def utc(value):
+        return value.replace(tzinfo=timezone.utc) if value and value.tzinfo is None else value
+
+    remaining = 0
+    known = True
+    for item in order.items:
+        profile = (profiles.get(("offer_id", item.offer_id)) if item.offer_id else None) or (
+            profiles.get(("sku", item.sku)) if item.sku else None)
+        if profile is None:
+            known = False
+            break
+        if order.internal_status in ("PRODUCED", "QUALITY_CHECK", "PACKING", "READY_TO_SHIP"):
+            minutes = profile.packing_minutes if order.internal_status != "READY_TO_SHIP" else 0
+        else:
+            minutes = profile.production_minutes + profile.packing_minutes
+        remaining += minutes * item.quantity
+    return evaluate(PriorityInput(
+        shipment_deadline=utc(order.shipment_deadline),
+        shipment_date_without_delay=utc(order.shipment_date_without_delay),
+        tariff_deadline=utc(order.tariff_deadline), tariff_impact=order.tariff_impact,
+        order_value=order.order_value, internal_status=order.internal_status,
+        remaining_minutes=remaining if known else None,
+        blocked=order.internal_status == "BLOCKED", override=order.priority_override,
+        pinned=order.priority_pinned), now,
+        PriorityWeights(settings.deadline_weight, settings.tariff_weight, settings.finance_weight,
+                        settings.feasibility_weight, settings.high_impact_rub, settings.high_value_rub))
 
 
 def production_profiles(db: Db) -> dict[tuple[str, str], ProductProductionProfile]:
@@ -57,7 +110,8 @@ def production_profiles(db: Db) -> dict[tuple[str, str], ProductProductionProfil
             for key, value in (("offer_id", profile.offer_id), ("sku", profile.sku)) if value}
 
 
-def order_data(order: Order, profiles: dict[tuple[str, str], ProductProductionProfile] | None = None) -> dict:
+def order_data(order: Order, profiles: dict[tuple[str, str], ProductProductionProfile] | None = None,
+               priority: dict | None = None) -> dict:
     profiles = profiles or {}
     return {
         "id": order.id, "posting_number": order.posting_number,
@@ -68,7 +122,9 @@ def order_data(order: Order, profiles: dict[tuple[str, str], ProductProductionPr
         "ready_to_ship_at": order.ready_to_ship_at,
         "handed_to_shipping_at": order.handed_to_shipping_at,
         "done_at": order.done_at,
-        "shipment_deadline": order.shipment_deadline, "items": [
+        "shipment_deadline": order.shipment_deadline,
+        "shipment_date_without_delay": order.shipment_date_without_delay,
+        "tariff_deadline": order.tariff_deadline, "priority": priority, "items": [
             {"product_name": item.product_name, "offer_id": item.offer_id, "sku": item.sku,
              "quantity": item.quantity,
              "production_profile": (
@@ -131,13 +187,70 @@ def list_orders(
         query = query.where((Order.shipment_deadline < utc_now()) & active if overdue else
                             (Order.shipment_deadline >= utc_now()) | ~active)
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
-    ids = db.scalars(query.order_by(Order.shipment_deadline, Order.id).limit(limit).offset(offset).with_only_columns(Order.id)).all()
+    ids = db.scalars(query.with_only_columns(Order.id)).all()
     if not ids:
         return {"items": [], "total": total}
     orders = db.scalars(order_query().where(Order.id.in_(ids))).all()
-    by_id = {order.id: order for order in orders}
     profile_map = production_profiles(db)
-    return {"items": [order_data(by_id[order_id], profile_map) for order_id in ids], "total": total}
+    settings = priority_settings(db)
+    now = utc_now()
+    ranked = [(order, priority_for(order, profile_map, settings, now)) for order in orders]
+    ranked.sort(key=lambda pair: sort_key(pair[1], pair[0].id))
+    can_view_finance = "finance.view" in user_permissions(_actor)
+    def visible_priority(priority):
+        if can_view_finance:
+            return priority
+        return {**priority, "financial_impact": None,
+                "reasons": [reason for reason in priority["reasons"]
+                            if not reason.startswith(("Подтверждённый эффект тарифа:", "Стоимость заказа:"))]}
+    return {"items": [order_data(order, profile_map, visible_priority(priority))
+                      for order, priority in ranked[offset:offset + limit]],
+            "total": total}
+
+
+@router.get("/priority-settings")
+def get_priority_settings(db: Db, _actor: Annotated[User, Depends(require("orders.view"))]) -> dict:
+    row = priority_settings(db)
+    return {name: getattr(row, name) for name in PrioritySettingsInput.model_fields}
+
+
+@router.put("/priority-settings")
+def set_priority_settings(payload: PrioritySettingsInput, db: Db, request: Request,
+                          actor: Annotated[User, Depends(require("settings.manage"))]) -> dict:
+    if sum((payload.deadline_weight, payload.tariff_weight, payload.finance_weight,
+            payload.feasibility_weight)) != 100:
+        raise HTTPException(422, "Priority weights must sum to 100")
+    row = priority_settings(db)
+    for name, value in payload.model_dump().items():
+        setattr(row, name, value)
+    db.add(row)
+    db.add(AuditLog(actor_user_id=actor.id, action="priority.settings_changed", detail="weights"))
+    db.commit()
+    request.app.state.order_events.publish(0)
+    return payload.model_dump()
+
+
+@router.put("/{order_id}/priority")
+def set_priority_override(order_id: int, payload: PriorityOverrideInput, db: Db, request: Request,
+                          actor: Annotated[User, Depends(require("orders.change_priority"))]) -> dict:
+    order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
+    if order is None:
+        raise HTTPException(404, "Order not found")
+    if order.internal_status in ("DONE", "CANCELLED", "HANDED_TO_SHIPPING"):
+        raise HTTPException(409, "Order is closed")
+    old = f"{order.priority_override or '-'}:{order.priority_pinned}"
+    order.priority_override = payload.level
+    order.priority_pinned = payload.pinned
+    db.add(AuditLog(actor_user_id=actor.id, action="order.priority_changed",
+                    detail=f"{order.posting_number}: {old} -> {payload.level or '-'}:{payload.pinned}"))
+    db.add(OrderTimelineEvent(order_id=order_id, event_type="priority_changed",
+                              description=f"Ручной приоритет: {payload.level or 'автоматический'}; закреплено: {payload.pinned}",
+                              actor_user_id=actor.id))
+    db.commit()
+    request.app.state.order_events.publish(order_id)
+    loaded = db.scalar(order_query().where(Order.id == order_id))
+    profiles = production_profiles(db)
+    return order_data(loaded, profiles, priority_for(loaded, profiles, priority_settings(db), utc_now()))
 
 
 @router.get("/events")

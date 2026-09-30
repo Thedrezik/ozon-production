@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 
 type User = { id: number; csrf_token?: string; permissions: string[] }
-type Order = { id: number; posting_number: string; shipment_deadline: string; internal_status: string; ozon_status: string; items: { product_name: string; quantity: number; production_profile: { production_minutes: number; packing_minutes: number; complexity: string; production_group: string | null } | null }[]; assigned_user: { id: number; display_name: string } | null }
+type Priority = { level: string; label: string; score: number; reasons: string[]; blocked: boolean; feasible: boolean | null; pinned: boolean; manual_override: string | null }
+type PrioritySettings = { deadline_weight: number; tariff_weight: number; finance_weight: number; feasibility_weight: number; high_impact_rub: string; high_value_rub: string }
+type Order = { id: number; posting_number: string; shipment_deadline: string; internal_status: string; ozon_status: string; priority: Priority | null; items: { product_name: string; quantity: number; production_profile: { production_minutes: number; packing_minutes: number; complexity: string; production_group: string | null } | null }[]; assigned_user: { id: number; display_name: string } | null }
 type Page = { items: Order[]; total: number }
 type Assignee = { id: number; display_name: string; is_active: boolean; permissions: string[] }
 type Status = { code: string; display_name: string; sort_order: number }
@@ -63,6 +65,7 @@ export function Orders({ current, mine }: { current: User; mine: boolean }) {
   const [statuses, setStatuses] = useState<Status[]>([])
   const [blockers, setBlockers] = useState<Blocker[]>([])
   const [blockerTypes, setBlockerTypes] = useState<BlockerType[]>([])
+  const [prioritySettings, setPrioritySettings] = useState<PrioritySettings | null>(null)
   const [problemOrder, setProblemOrder] = useState<number | null>(null)
   const [problemType, setProblemType] = useState('OTHER')
   const [problemDescription, setProblemDescription] = useState('')
@@ -81,6 +84,7 @@ export function Orders({ current, mine }: { current: User; mine: boolean }) {
   const refreshStatuses = useCallback(() => { void request<Status[]>('/orders/statuses').then(setStatuses).catch(() => {}) }, [])
   useEffect(() => { refreshStatuses() }, [refreshStatuses])
   useEffect(() => { void request<BlockerType[]>('/blockers/types').then(setBlockerTypes).catch(() => {}) }, [])
+  useEffect(() => { if (current.permissions.includes('settings.manage')) void request<PrioritySettings>('/orders/priority-settings').then(setPrioritySettings).catch(() => {}) }, [current.permissions])
   useEffect(() => {
     if (!canAssign) return
     request<{ items: Assignee[] }>('/users?limit=100').then(result => setAssignees(result.items.filter(user => user.is_active && user.permissions.includes('orders.change_status')))).catch(() => setAssignees([]))
@@ -111,6 +115,24 @@ export function Orders({ current, mine }: { current: User; mine: boolean }) {
       await refresh()
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось обновить заказ') }
     finally { setBusy(null) }
+  }
+
+  async function changePriority(order: Order, level: string | null, pinned: boolean) {
+    setBusy(order.id)
+    try {
+      await request(`/orders/${order.id}/priority`, { method: 'PUT', body: JSON.stringify({ level, pinned }) }, current.csrf_token)
+      await refresh()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось изменить приоритет') }
+    finally { setBusy(null) }
+  }
+
+  async function savePrioritySettings(event: FormEvent) {
+    event.preventDefault()
+    if (!prioritySettings) return
+    try {
+      await request('/orders/priority-settings', { method: 'PUT', body: JSON.stringify(prioritySettings) }, current.csrf_token)
+      await refresh()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось сохранить настройки приоритета') }
   }
 
   async function createProblem(event: FormEvent) {
@@ -168,10 +190,15 @@ export function Orders({ current, mine }: { current: User; mine: boolean }) {
     <div className="grid grid-cols-2 gap-2"><label className="text-sm">Статус<select value={status} onChange={event => { setStatus(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3"><option value="">Все</option>{statuses.map(entry => <option value={entry.code} key={entry.code}>{entry.display_name}</option>)}</select></label>
       <label className="text-sm">Показать<select value={special} onChange={event => { setSpecial(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3"><option value="">Все</option><option value="blocked">Проблемы</option><option value="ready">Готовые</option><option value="overdue">Просроченные</option></select></label></div>
     {current.permissions.includes('settings.manage') && <details className="rounded-xl bg-white p-3"><summary>Настроить статусы</summary><div className="mt-2 grid gap-2">{statuses.map(entry => <button key={entry.code} onClick={() => void editStatus(entry)} className="rounded border p-2 text-left">{entry.display_name} ({entry.code}) · {entry.sort_order}</button>)}</div></details>}
+    {current.permissions.includes('settings.manage') && prioritySettings && <details className="rounded-xl bg-white p-3"><summary>Настроить приоритет</summary><form onSubmit={event => void savePrioritySettings(event)} className="mt-3 grid gap-3 sm:grid-cols-2">{([
+      ['deadline_weight', 'Срок отгрузки, %'], ['tariff_weight', 'Срок тарифа, %'], ['finance_weight', 'Денежный эффект и стоимость, %'], ['feasibility_weight', 'Возможность успеть, %'], ['high_impact_rub', 'Высокий эффект тарифа, ₽'], ['high_value_rub', 'Высокая стоимость заказа, ₽'],
+    ] as const).map(([key, label]) => <label key={key} className="text-sm">{label}<input type="number" min={key.endsWith('_weight') ? 0 : 1} max={key.endsWith('_weight') ? 100 : undefined} step={key.endsWith('_weight') ? 1 : '0.01'} required value={prioritySettings[key]} onChange={event => setPrioritySettings({ ...prioritySettings, [key]: key.endsWith('_weight') ? Number(event.target.value) : event.target.value })} className="mt-1 w-full rounded-lg border p-3" /></label>)}<p className="self-center text-sm">Сумма весов: {prioritySettings.deadline_weight + prioritySettings.tariff_weight + prioritySettings.finance_weight + prioritySettings.feasibility_weight}%</p><button className="min-h-11 rounded-lg bg-blue-800 px-3 text-white">Сохранить</button></form></details>}
     {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</p>}
     {!page.items.length && <p className="rounded-xl bg-white p-5">Заказов нет.</p>}
     {page.items.map(order => <article key={order.id} className="rounded-2xl border bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">{order.items.map(item => `${item.product_name} × ${item.quantity}`).join(', ')}</h3><p className="mt-1 text-sm text-slate-600">{order.posting_number}</p>{order.items.some(item => item.production_profile) && <p className="mt-2 text-sm text-slate-600">Норматив: {order.items.filter(item => item.production_profile).map(item => `${item.production_profile!.production_minutes} мин производство + ${item.production_profile!.packing_minutes} мин упаковка${item.quantity > 1 ? ` × ${item.quantity}` : ''}`).join('; ')}</p>}</div><span className="rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-900">{statuses.find(entry => entry.code === order.internal_status)?.display_name ?? labels[order.internal_status]}</span></div>
+      {order.priority && <div className={`mt-3 rounded-xl border p-3 ${order.priority.blocked ? 'border-red-300 bg-red-50' : order.priority.level === 'P0' ? 'border-red-300 bg-red-50' : order.priority.level === 'P1' ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}><p className="font-bold">{order.priority.level} · {order.priority.label}{order.priority.blocked ? ' · Заблокирован' : ''}{order.priority.pinned ? ' · Закреплён' : ''}</p><ul className="mt-2 list-disc pl-5 text-sm">{order.priority.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul></div>}
       <p className="mt-3 text-sm">Отгрузить до: <strong>{new Date(order.shipment_deadline).toLocaleString('ru-RU')}</strong></p><p className="mt-1 text-sm">Ответственный: {order.assigned_user?.display_name || 'Не назначен'}</p>
+      {current.permissions.includes('orders.change_priority') && order.priority && !['DONE', 'CANCELLED', 'HANDED_TO_SHIPPING'].includes(order.internal_status) && <div className="mt-3 flex flex-wrap gap-3"><label className="text-sm">Ручной приоритет<select aria-label={`Приоритет ${order.posting_number}`} value={order.priority.manual_override ?? ''} disabled={busy === order.id} onChange={event => void changePriority(order, event.target.value || null, order.priority!.pinned)} className="ml-2 min-h-11 rounded-lg border p-2"><option value="">Автоматический</option>{['P0', 'P1', 'P2', 'P3', 'P4'].map(level => <option key={level} value={level}>{level}</option>)}</select></label><button disabled={busy === order.id} onClick={() => void changePriority(order, order.priority!.manual_override, !order.priority!.pinned)} className="min-h-11 rounded-lg border px-3">{order.priority.pinned ? 'Открепить' : 'Закрепить'}</button></div>}
       <div className="mt-4 grid gap-2 sm:grid-cols-2">{!order.assigned_user && ['NEW', 'QUEUED', 'SENT_TO_PRODUCTION'].includes(order.internal_status) && <button disabled={busy === order.id} onClick={() => void act(order, 'claim')} className="min-h-12 rounded-xl bg-blue-800 px-4 py-3 font-semibold text-white disabled:opacity-50">Взять в работу</button>}
         {actions(order).map(action => <button key={action.status} disabled={busy === order.id} onClick={() => void act(order, 'status', action.status)} className="min-h-12 rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white disabled:opacity-50">{action.label}</button>)}
         {current.permissions.includes('blockers.create') && ['QUEUED', 'SENT_TO_PRODUCTION', 'IN_PRODUCTION', 'QUALITY_CHECK', 'BLOCKED'].includes(order.internal_status) && <button onClick={() => setProblemOrder(order.id)} className="min-h-12 rounded-xl border border-red-300 px-4 py-3 font-semibold text-red-800">Проблема</button>}

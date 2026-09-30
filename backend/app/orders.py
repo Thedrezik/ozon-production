@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -66,6 +67,9 @@ def seed_mock_orders(db: Session) -> int:
             continue
         order = Order(posting_number=posting, ozon_status=ozon_status, internal_status=status,
                       shipment_deadline=now + timedelta(hours=hours), is_mock=True,
+                      tariff_deadline=now + timedelta(minutes=75) if key == "near-deadline" else None,
+                      tariff_impact=Decimal(640) if key == "near-deadline" else None,
+                      order_value=Decimal(12000) if key == "near-deadline" else None,
                       items=[OrderItem(product_name=product, quantity=quantity)])
         db.add(order)
         db.flush()
