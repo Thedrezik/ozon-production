@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api_analytics import router as analytics_router
+from app.api_audit import router as audit_router
 from app.api_auth import router as auth_router
 from app.api_blockers import router as blockers_router
 from app.api_dashboard import router as dashboard_router
@@ -70,6 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = config
     app.state.storage = LocalStorage(config.upload_dir)
     app.state.upload_slot = asyncio.Semaphore(1)
+    app.include_router(audit_router)
     app.include_router(files_router)
     app.include_router(auth_router)
     app.include_router(orders_router)

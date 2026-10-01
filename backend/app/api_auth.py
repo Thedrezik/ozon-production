@@ -65,7 +65,10 @@ def user_data(user: User, csrf_token: str | None = None) -> dict:
 
 
 def audit(db: DbSession, action: str, actor: int | None, target: int | None = None) -> None:
-    db.add(AuditLog(action=action, actor_user_id=actor, target_user_id=target))
+    entity = target if target is not None else actor
+    db.add(AuditLog(action=action, actor_user_id=actor, target_user_id=target,
+                    entity_type="users" if entity is not None else None,
+                    entity_id=str(entity) if entity is not None else None))
 
 
 def chosen_roles(db: DbSession, names: list[str], actor: User) -> list[Role]:

@@ -17,6 +17,10 @@ def test_inbox_upgrade_downgrade_upgrade(tmp_path, monkeypatch):
     try:
         command.upgrade(config, "head")
         inspector = inspect(engine)
+        assert {c["name"] for c in inspector.get_columns("audit_log")} >= {
+            "entity_type", "entity_id", "old_value", "new_value", "ip", "user_agent"}
+        assert {i["name"] for i in inspector.get_indexes("audit_log")} >= {
+            "ix_audit_log_entity_type", "ix_audit_log_entity_id"}
         assert {i["name"] for i in inspector.get_indexes("orders")} >= {
             "ix_orders_created_at", "ix_orders_production_started_at",
             "ix_orders_production_completed_at", "ix_orders_ready_to_ship_at"}
@@ -27,7 +31,7 @@ def test_inbox_upgrade_downgrade_upgrade(tmp_path, monkeypatch):
         assert {tuple(c["column_names"]) for c in inspector.get_unique_constraints("ozon_webhook_events")} == {("event_key",)}
         assert {c["name"] for c in inspector.get_columns("orders")} >= {"ozon_delivery_date_begin", "ozon_delivery_date_end"}
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0021_analytics"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0022_audit"
         assert {c["name"] for c in inspector.get_columns("photos")} >= {"storage_key", "order_id", "blocker_id", "comment_id", "size_bytes"}
         assert {i["name"] for i in inspector.get_indexes("photos")} == {"ix_photos_order_id", "ix_photos_blocker_id", "ix_photos_comment_id"}
         assert {c["name"] for c in inspector.get_columns("ozon_credentials")} >= {"encrypted_credentials", "revision", "expires_at", "checked_at"}

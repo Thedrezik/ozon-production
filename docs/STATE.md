@@ -39,17 +39,19 @@ Last updated: 2026-10-02
 
 - Task 028: SQL production analytics, local-date period filter, stage/cycle averages, deadline-cohort overdue, blocker reasons, SKU/offer actual averages with existing normative profiles, actor-based employee throughput, current assignment workload, pagination and RBAC; migration `0021_analytics`.
 
+- Task 029: existing audit extended with transactional safe old/new snapshots, actor/IP/User-Agent, immutable ORM/PostgreSQL guards, critical-action coverage, audit.view API and mobile filtered paginated viewer; migration `0022_audit`.
+
 ## Current
 
-- Task 028 complete. Analytics methodology documented in DECISIONS.md. Migration head: `0021_analytics`. No commit or push.
+- Task 029 complete. Audit boundary and immutability documented in DECISIONS.md. Migration head: `0022_audit`. No commit or push.
 
 ## Next
 
-- Task 028 finished; task 029 has not been started.
+- Task 029 finished. Task 030 has not been started; await a separate task request.
 
 ## Known Issues
 
-- Docker/Caddy executables are unavailable here; PostgreSQL/Compose and Caddy runtime checks could not be run for task 028. Real Ozon connection/delivery remains an HTTPS deployment check.
+- Docker/Caddy executables are unavailable here; PostgreSQL/Compose and Caddy runtime checks could not be run for task 029. Real Ozon connection/delivery remains an HTTPS deployment check.
 - Starlette emits a dependency deprecation warning about its TestClient/httpx integration; tests pass.
 - Web Push UI smoke passed on mock data; actual OS push reception awaits deployment with VAPID/HTTPS. The earlier two-browser SSE scenario still awaits a running deployment.
 - Real account import remains a deployment check. All automated import validation uses synthetic fixtures/mock HTTP; no live Ozon calls were made.
@@ -70,7 +72,7 @@ Last updated: 2026-10-02
 
 ## Last Tests
 
-- Task 028: backend full suite: 206 passed; focused analytics: 4 passed. Ruff app/tests/Alembic passed (run from backend). Existing Starlette/httpx and Alembic deprecation warnings remain.
-- Frontend lint/typecheck/production build and mobile headless Edge analytics mock UI passed: metrics, period change, pagination, empty state and finance permission visibility. git diff --check passed.
-- Alembic upgrade/downgrade/upgrade and analytics indexes verified on SQLite; PostgreSQL SQL generation for 0020_photos → 0021_analytics and downgrade passed. Full-history offline SQL generation is unsupported by the existing RBAC data-seeding migration; not changed here.
-- Docker executable unavailable: Compose build/up, container migration/ps, container health/readiness and actual PostgreSQL queries were not run. Backend health/readiness are covered by passing tests. Apply migration before deployment.
+- Task 029: full backend suite 213 passed; focused audit/auth 15 passed (7 audit cases). Ruff app/tests/Alembic passed. Existing Starlette/httpx and Alembic deprecation warnings remain.
+- Frontend lint/typecheck/production build and headless Edge mobile mock audit UI passed: all filters, pagination, old/new detail, empty state and audit.view visibility. git diff --check passed.
+- Alembic upgrade/downgrade/upgrade and audit columns/indexes verified on SQLite. PostgreSQL SQL generation for 0021_analytics → 0022_audit and downgrade passed, including append-only UPDATE/DELETE/TRUNCATE trigger. Older rows are preserved without fabricated snapshots.
+- Docker unavailable: Compose build/up, container migration/ps, actual PostgreSQL schema/trigger execution and container health/readiness were not run. Health/readiness backend tests pass; apply migration before deployment.

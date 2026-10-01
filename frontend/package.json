@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
+    "test:audit:browser": "node scripts/test-audit-browser.mjs",
     "test:analytics:browser": "node scripts/test-analytics-browser.mjs",
     "test:offline": "node scripts/test-offline.mjs",
     "test:offline:browser": "node scripts/test-offline-browser.mjs"

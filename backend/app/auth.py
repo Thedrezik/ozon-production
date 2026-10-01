@@ -51,6 +51,8 @@ _dummy_hash = hash_password("invalid-password")
 
 def get_db(request: Request):
     with DbSession(request.app.state.engine) as db:
+        db.info["audit_context"] = {"ip": request.client.host if request.client else None,
+                                    "user_agent": request.headers.get("user-agent", "")[:512]}
         yield db
 
 
@@ -95,6 +97,7 @@ def authenticated(request: Request, db: Db) -> tuple[User, Session]:
         csrf = request.headers.get("X-CSRF-Token", "")
         if not csrf or not secrets.compare_digest(csrf, session.csrf_token):
             raise HTTPException(403, "Invalid CSRF token")
+    db.info["audit_context"]["actor_user_id"] = user.id
     return user, session
 
 

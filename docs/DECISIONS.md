@@ -334,3 +334,37 @@ only after an explicit action, stops tracks on scan/close/unmount, and offers ma
 entry on camera failure. It shows the resolved order through the existing exact-ID
 queue filter, clearing other filters and ignoring My Tasks ownership for that lookup.
 API/photo responses remain uncached by the PWA. Real phone camera use requires HTTPS.
+
+
+## 029 — Extend the existing audit table with transactional change snapshots
+
+Keep `audit_log` and all existing semantic action records. An allowlisted SQLAlchemy
+flush hook adds structured per-entity create/update/delete snapshots in the same
+transaction for production status, assignments, override/pin, blockers, procurement
+and links, Manager Tasks (including automatic resolution), users/roles/permissions,
+workflow labels/order, priority settings, product profiles and credential metadata.
+Existing summary records remain useful for authentication, bulk operations and
+integration attempts; bulk records additionally carry selected order IDs/targets.
+No timeline/domain event is replaced or consumed by audit. Batch old-value reads by
+entity type, skip unchanged snapshots, and clear pending state on rollback. Install
+hooks on application database engines; historical Alembic data seeds are excluded
+because their schema predates these columns.
+
+Never snapshot request bodies, raw Ozon data, credential ciphertext, passwords,
+sessions, CSRF, Telegram or VAPID secrets. Explicit field allowlists and recursive
+sensitive-key redaction protect old/new JSON. Free-text edits record field names
+without copying descriptions; integration changes expose revision/expiry/check time
+only. Hide SQL parameters in database errors. Request context uses the ASGI peer IP
+and a bounded User-Agent; background/CLI operations have no request metadata.
+
+Migration `0022_audit` preserves prior rows and adds nullable structured fields and
+entity indexes. ORM guards reject edits/deletes, and PostgreSQL rejects UPDATE,
+DELETE and TRUNCATE with a trigger. Physical user deletion that would null an audit
+actor is therefore rejected; use existing user deactivation. Schema maintenance and
+migration downgrade remain privileged operator actions. Existing historical rows
+retain unknown entity/old/new values; do not fabricate a backfill.
+
+Expose only paginated GET `/api/audit` with backend `audit.view`, exact user/action/
+entity type/ID filters and an inclusive timezone-aware UTC period, ordered by time
+and ID descending. The permission-gated mobile UI shows safe snapshots and metadata.
+There are no mutation/export endpoints or additional event-store infrastructure.

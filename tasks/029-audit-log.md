@@ -1,6 +1,6 @@
 # Task 029 — Audit Log
 
-status: pending  
+status: completed
 complexity: MEDIUM  
 recommended_model: GPT-6 Sol
 reasoning: Low
@@ -47,11 +47,11 @@ reasoning: Low
 
 ## Acceptance Criteria
 
-- [ ] Все критические действия имеют audit record.
-- [ ] Sensitive secrets отсутствуют.
-- [ ] Фильтрация audit работает.
-- [ ] Audit нельзя редактировать через обычный API.
-- [ ] STATE.md обновлён.
+- [x] Все критические действия имеют audit record.
+- [x] Sensitive secrets отсутствуют.
+- [x] Фильтрация audit работает.
+- [x] Audit нельзя редактировать через обычный API.
+- [x] STATE.md обновлён.
 
 ## Completion
 

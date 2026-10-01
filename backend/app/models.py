@@ -83,6 +83,12 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(80), index=True)
     target_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entity_type: Mapped[str | None] = mapped_column(String(80), index=True)
+    entity_id: Mapped[str | None] = mapped_column(String(160), index=True)
+    old_value: Mapped[dict | None] = mapped_column(JSON)
+    new_value: Mapped[dict | None] = mapped_column(JSON)
+    ip: Mapped[str | None] = mapped_column(String(80))
+    user_agent: Mapped[str | None] = mapped_column(String(512))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
 
 
