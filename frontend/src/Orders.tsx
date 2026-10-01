@@ -1,5 +1,6 @@
 import { Photos, OrderQR, Scanner } from './Files'
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { clearQueueSnapshot, reportUnavailable, saveQueueSnapshot } from './offline'
 
 type User = { id: number; csrf_token?: string; permissions: string[] }
 type Priority = { level: string; label: string; score: number; reasons: string[]; blocked: boolean; feasible: boolean | null; pinned: boolean; manual_override: string | null }
@@ -30,12 +31,22 @@ function TariffTimeline({ tariff }: { tariff: Tariff }) {
   </details>
 }
 
+class RequestError extends Error {
+  constructor(message: string, public status: number) { super(message) }
+}
+
 async function request<T>(path: string, options: RequestInit = {}, csrf?: string): Promise<T> {
-  const response = await fetch(`/api${path}`, { ...options, credentials: 'same-origin', cache: 'no-store',
-    headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(csrf ? { 'X-CSRF-Token': csrf } : {}) } })
+  if (!navigator.onLine && options.method && options.method !== 'GET') throw new Error('OFFLINE: изменения недоступны. Действие не сохранено.')
+  let response: Response
+  try {
+    response = await fetch(`/api${path}`, { ...options, signal: options.signal ?? AbortSignal.timeout(12_000), credentials: 'same-origin', cache: 'no-store',
+      headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(csrf ? { 'X-CSRF-Token': csrf } : {}) } })
+  } catch (cause) { reportUnavailable(); throw cause }
   if (!response.ok) {
+    if (response.status >= 500) reportUnavailable()
+    if (response.status === 401 || response.status === 403) { clearQueueSnapshot(); window.dispatchEvent(new Event('session-invalid')) }
     const body = await response.json().catch(() => null) as { detail?: string } | null
-    throw new Error(body?.detail || `Ошибка ${response.status}`)
+    throw new RequestError(body?.detail || `Ошибка ${response.status}`, response.status)
   }
   return response.json() as Promise<T>
 }
@@ -80,6 +91,9 @@ export function Orders({ current, mine, initialFilter = '', refreshToken = 0 }: 
   const [offset, setOffset] = useState(0)
   const [busy, setBusy] = useState<number | null>(null)
   const [error, setError] = useState('')
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [stale, setStale] = useState(true)
+  const requestVersion = useRef(0)
   const [assignees, setAssignees] = useState<Assignee[]>([])
   const [statuses, setStatuses] = useState<Status[]>([])
   const [blockers, setBlockers] = useState<Blocker[]>([])
@@ -93,6 +107,8 @@ export function Orders({ current, mine, initialFilter = '', refreshToken = 0 }: 
   const shopWorker = current.permissions.includes('orders.change_status') && !current.permissions.includes('orders.assign')
 
   const refresh = useCallback(async () => {
+    const version = ++requestVersion.current
+    setStale(true)
     const params = new URLSearchParams({ limit: '20', offset: String(offset) })
     if (mine && !special.startsWith('order_id:')) params.set('assigned_user_id', String(current.id))
     if (status) params.set('status', status)
@@ -104,11 +120,25 @@ export function Orders({ current, mine, initialFilter = '', refreshToken = 0 }: 
     if (special.startsWith('assigned_user_id:')) params.set('assigned_user_id', special.split(':')[1])
     else if (special.startsWith('order_id:')) params.set('order_id', special.split(':')[1])
     else if (special) params.set(special, special === 'priority_level' ? 'P0' : 'true')
-    try { setPage(await request<Page>(`/orders?${params}`)); const result = await request<{ items: Blocker[] }>('/blockers?limit=100'); setBlockers(result.items); setError('') }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось загрузить очередь') }
+    try {
+      const [loaded, result] = await Promise.all([request<Page>(`/orders?${params}`), request<{ items: Blocker[] }>('/blockers?limit=100')])
+      if (version !== requestVersion.current || !navigator.onLine) return
+      setPage(loaded); setBlockers(result.items); setError('')
+      saveQueueSnapshot(current.id, mine ? 'Мои задачи (сохранённые фильтры)' : 'Очередь (сохранённые фильтры)', offset, loaded)
+      setLastUpdated(new Date().toISOString()); setStale(false)
+    }
+    catch (cause) {
+      if (version !== requestVersion.current) return
+      setError(cause instanceof Error ? cause.message : 'Не удалось загрузить очередь')
+      if (cause instanceof TypeError || (cause instanceof DOMException && cause.name === 'TimeoutError')) reportUnavailable()
+    }
   }, [mine, current.id, offset, status, priorityLevel, special, search, ozonStatus, product, warehouse])
 
-  useEffect(() => { void refresh() }, [refresh, refreshToken])
+  useEffect(() => {
+    const version = requestVersion
+    void refresh()
+    return () => { version.current++ }
+  }, [refresh, refreshToken])
   const refreshStatuses = useCallback(() => { void request<Status[]>('/orders/statuses').then(setStatuses).catch(() => {}) }, [])
   useEffect(() => { refreshStatuses() }, [refreshStatuses])
   useEffect(() => { void request<BlockerType[]>('/blockers/types').then(setBlockerTypes).catch(() => {}) }, [])
@@ -137,7 +167,11 @@ export function Orders({ current, mine, initialFilter = '', refreshToken = 0 }: 
       const body = kind === 'status' ? { status: value } : { user_id: value }
       await request(path, { method: kind === 'assignment' ? 'PUT' : 'POST', ...(kind === 'claim' ? {} : { body: JSON.stringify(body) }) }, current.csrf_token)
       await refresh()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось обновить заказ') }
+    } catch (cause) {
+      if (cause instanceof RequestError && cause.status === 409) {
+        await refresh(); setError('Заказ изменился или переход уже недоступен. Состояние обновлено с сервера. Проверьте заказ перед повторным действием.')
+      } else setError(cause instanceof Error ? cause.message : 'Не удалось обновить заказ')
+    }
     finally { setBusy(null) }
   }
 
@@ -241,6 +275,12 @@ export function Orders({ current, mine, initialFilter = '', refreshToken = 0 }: 
   }
 
   return <section className="space-y-4">
+    <p role="status" className={`rounded-xl p-3 ${stale ? 'bg-amber-100 text-amber-950' : 'bg-slate-100'}`}>
+      {stale ? 'Данные могут быть устаревшими. Ожидаем успешное обновление с сервера.' : 'Очередь загружена с сервера.'}
+      {' '}Последнее успешное обновление: {lastUpdated ? new Date(lastUpdated).toLocaleString('ru-RU') : 'ещё не было'}
+    </p>
+    <button onClick={() => void refresh()} className="min-h-12 rounded-xl border bg-white px-4 py-3">Обновить очередь</button>
+    <fieldset disabled={stale} className="min-w-0 space-y-4 disabled:opacity-70">
     <Scanner onOrder={id => { setSpecial(`order_id:${id}`); setStatus(''); setPriorityLevel(''); setSearch(''); setOzonStatus(''); setProduct(''); setWarehouse(''); setOffset(0); setError('') }}/><div className="flex items-center justify-between"><h2 className="text-2xl font-bold">{initialFilter === 'blocked' ? 'Проблемы' : mine ? 'Мои задачи' : 'Очередь'}</h2><button onClick={() => void refresh()} className="min-h-11 rounded-xl border bg-white px-4 py-3">Обновить</button></div>
     {shopWorker && <button disabled={nextBusy} onClick={() => void nextTask()} className="min-h-14 w-full rounded-2xl bg-blue-800 px-5 py-4 text-lg font-bold text-white shadow-sm disabled:opacity-50">{nextBusy ? 'Ищем задачу…' : 'Следующая задача'}</button>}
     <div className="grid gap-2 sm:grid-cols-2"><label className="text-sm sm:col-span-2">Поиск<input aria-label="Поиск заказов" placeholder="Отправление, заказ, SKU, offer_id, товар" value={search} onChange={event => { setSearch(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3" /></label><label className="text-sm">Статус<select value={status} onChange={event => { setStatus(event.target.value); setOffset(0) }} className="mt-1 w-full rounded-xl border bg-white p-3"><option value="">Все</option>{statuses.map(entry => <option value={entry.code} key={entry.code}>{entry.display_name}</option>)}</select></label>
@@ -269,5 +309,6 @@ export function Orders({ current, mine, initialFilter = '', refreshToken = 0 }: 
       {canAssign && !['DONE', 'CANCELLED'].includes(order.internal_status) && <label className="mt-4 block text-sm">Назначить сотрудника<select value={order.assigned_user?.id ?? ''} disabled={busy === order.id} onChange={event => void act(order, 'assignment', event.target.value ? Number(event.target.value) : null)} className="mt-1 w-full rounded-xl border p-3"><option value="">Не назначен</option>{assignees.map(user => <option key={user.id} value={user.id}>{user.display_name}</option>)}</select></label>}<Photos orderId={order.id} current={current}/><OrderQR orderId={order.id}/>{!shopWorker && <OrderTimeline orderId={order.id} current={current}/>}
     </article>)}
     <div className="flex items-center justify-between"><button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 20))} className="rounded-xl border bg-white px-4 py-3 disabled:opacity-40">Назад</button><span className="text-sm">{page.total ? `${offset + 1}–${Math.min(offset + 20, page.total)} из ${page.total}` : '0 заказов'}</span><button disabled={offset + 20 >= page.total} onClick={() => setOffset(offset + 20)} className="rounded-xl border bg-white px-4 py-3 disabled:opacity-40">Далее</button></div>
+    </fieldset>
   </section>
 }

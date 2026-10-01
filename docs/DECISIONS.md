@@ -1,5 +1,52 @@
 # Architecture Decisions
 
+## 027 — Short-lived read-only offline queue
+
+Keep the existing generated Workbox worker: precache the static application shell
+and use NetworkOnly for `/api/*`. A worker cache never supplies operational API
+data. After a successful authorized queue + blockers read, retain only one display
+snapshot of the loaded queue page (including pagination scope and UTC receipt time).
+Project posting/product/quantity, separate production/Ozon statuses, shipment
+deadline and priority level/label; omit money, priority financial reasons, staff
+identity, comments, photos, credentials, CSRF tokens and full API responses.
+
+Use sessionStorage scoped to the current tab, with an in-memory fallback if storage
+is disabled. A snapshot expires after one hour, is removed on logout, explicit
+offline deletion, authorization rejection or a different authenticated user, and
+is never an authenticated session. Offline reload can display this previously
+authorized local projection without restoring a User or permissions. Like any
+local offline display, server revocation cannot erase a disconnected device until
+reconnect; limit exposure through this projection, expiry and tab lifetime.
+Closing the tab ends storage; reopening the installed PWA in a new tab still loads
+the shell but needs the network for its first queue. No offline login is added.
+
+Show OFFLINE for browser disconnection or failed/timed-out queue requests, including
+backend outages while navigator.onLine is true. Show receipt time and explicitly
+freeze priority/deadline interpretation at that time. Offline mode exposes only
+this page without mutations, filters, detail requests or other operational screens.
+Reconnect/30-second recovery polling first validates the server session, then
+reopens the queue and requests fresh backend data. Keep a stale warning and disable
+queue controls until a full successful read; reconnect itself never makes a snapshot
+fresh. Existing SSE open/events, focus and periodic reconciliation continue to
+invalidate data online. Ignore superseded/unmounted queue reads.
+
+Do not implement an offline mutation queue for short outages. Reliable deferred
+status/assignment changes require server idempotency receipts plus expected-version
+checks across status, assignment, blockers and RBAC, beyond current contracts. The
+read-only choice avoids ambiguous retries and silent overwrites without introducing
+a second workflow. No mutation is replayed automatically; live status/claim/assignment
+409 responses show an explicit conflict message and refresh from the server.
+An interrupted live mutation may already have committed: inspect refreshed server
+state before retrying. Backend transitions, locking, permissions, sessions and CSRF
+remain authoritative and unchanged.
+
+Validation: `npm run build`, `npm run test:offline`, existing push-worker checks and
+`npm run test:offline:browser`. The browser test needs Playwright with Edge installed;
+`PLAYWRIGHT_MODULE` can point to the bundled Playwright `index.mjs`. It serves the
+actual production build and generated worker with synthetic local API responses;
+checks offline reload, stale/time display, reconnect, no deferred writes, 409,
+backend outage, auth revocation, offline deletion and absence of cached API data.
+
 ## 022 — Verified Ozon push contract and durable inbox
 
 Official [push notifications](https://docs.ozon.ru/api/seller/#tag/push_types),

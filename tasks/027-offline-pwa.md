@@ -1,6 +1,6 @@
 # Task 027 — Offline and Poor Network Support
 
-status: pending  
+status: completed
 complexity: HIGH  
 recommended_model: GPT-6 Sol
 reasoning: Medium
@@ -49,12 +49,12 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Приложение открывается после кратковременной потери сети.
-- [ ] Пользователь понимает, что данные offline.
-- [ ] Reconnect восстанавливает актуальное состояние.
-- [ ] Если offline mutations реализованы — они синхронизируются без duplicate.
-- [ ] Conflict case протестирован.
-- [ ] STATE.md обновлён.
+- [x] Приложение открывается после кратковременной потери сети.
+- [x] Пользователь понимает, что данные offline.
+- [x] Reconnect восстанавливает актуальное состояние.
+- [x] Если offline mutations реализованы — они синхронизируются без duplicate (выбран read-only режим; отложенных операций нет).
+- [x] Conflict case протестирован (live 409: понятное сообщение и server refresh; offline actions недоступны).
+- [x] STATE.md обновлён.
 
 ## Completion
 

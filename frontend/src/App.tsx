@@ -8,13 +8,15 @@ import { Dashboard } from './Dashboard'
 import { Notifications } from './Notifications'
 import { OzonIntegration } from './OzonIntegration'
 import { OzonSyncStatus } from './OzonSyncStatus'
+import { OfflineQueue } from './OfflineQueue'
+import { clearQueueSnapshot, readQueueSnapshot } from './offline'
 
 type User = { id: number; username: string; display_name: string; is_active: boolean; roles: string[]; permissions: string[]; csrf_token?: string }
 type Health = { mock_mode: boolean }
 
 async function api<T>(path: string, options: RequestInit = {}, csrf?: string): Promise<T> {
   const response = await fetch(`/api${path}`, {
-    ...options, cache: 'no-store', credentials: 'same-origin',
+    ...options, signal: options.signal ?? AbortSignal.timeout(12_000), cache: 'no-store', credentials: 'same-origin',
     headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(csrf ? { 'X-CSRF-Token': csrf } : {}), ...options.headers },
   })
   if (!response.ok) {
@@ -98,7 +100,9 @@ function Account({ current }: { current: User }) {
 }
 
 export function App() {
-  const [online, setOnline] = useState(navigator.onLine)
+  const [offline, setOffline] = useState(!navigator.onLine)
+  const [reconnecting, setReconnecting] = useState(false)
+  const [retryToken, setRetryToken] = useState(0)
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [health, setHealth] = useState<Health | null>(null)
@@ -127,11 +131,45 @@ export function App() {
     else if (path === '/ozon-integration') setPage('ozon-integration')
     else if (path === '/procurement') setPage('procurement')
   }, [user])
-  useEffect(() => { const sync = () => setOnline(navigator.onLine); window.addEventListener('online', sync); window.addEventListener('offline', sync); return () => { window.removeEventListener('online', sync); window.removeEventListener('offline', sync) } }, [])
   const landingPage = (value: User) => value.permissions.includes('analytics.view') ? 'dashboard' : value.roles.some(role => ['PRODUCTION_WORKER', 'PACKER'].includes(role)) ? 'mine' : 'queue'
-  useEffect(() => { api<User>('/auth/me').then(value => { setUser(value); setPage(landingPage(value)) }).catch(() => setUser(null)).finally(() => setLoading(false)); api<Health>('/health').then(setHealth).catch(() => setHealth(null)) }, [])
   useEffect(() => {
-    if (!user) return
+    let stopped = false
+    let checking = false
+    let recovered = false
+    const disconnected = () => { recovered = false; setOffline(true); setLoading(false) }
+    const invalid = () => { clearQueueSnapshot(); setUser(null) }
+    async function check() {
+      if (checking || stopped) return
+      if (!navigator.onLine) { disconnected(); return }
+      checking = true; setReconnecting(true)
+      try {
+        const response = await fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin', signal: AbortSignal.timeout(12_000) })
+        if (stopped) return
+        if (response.status === 401 || response.status === 403) {
+          invalid(); setOffline(false); return
+        }
+        if (!response.ok) throw new Error('Server unavailable')
+        const value = await response.json() as User
+        if (stopped || !navigator.onLine) return
+        const snapshot = readQueueSnapshot()
+        if (snapshot && (snapshot.owner !== value.id || !value.permissions.includes('orders.view'))) clearQueueSnapshot()
+        setUser(value); setOffline(false); setRefreshToken(token => token + 1)
+        if (!recovered) setPage(snapshot && snapshot.owner === value.id ? 'queue' : landingPage(value))
+        recovered = true
+      } catch { if (!stopped) disconnected() }
+      finally { checking = false; if (!stopped) { setLoading(false); setReconnecting(false) } }
+    }
+    void check()
+    window.addEventListener('online', check)
+    window.addEventListener('offline', disconnected)
+    window.addEventListener('backend-unavailable', disconnected)
+    window.addEventListener('session-invalid', invalid)
+    const poll = window.setInterval(check, 30_000)
+    return () => { stopped = true; window.clearInterval(poll); window.removeEventListener('online', check); window.removeEventListener('offline', disconnected); window.removeEventListener('backend-unavailable', disconnected); window.removeEventListener('session-invalid', invalid) }
+  }, [retryToken])
+  useEffect(() => { api<Health>('/health').then(setHealth).catch(() => setHealth(null)) }, [])
+  useEffect(() => {
+    if (!user || offline) return
     const source = new EventSource('/api/orders/events')
     const refresh = () => setRefreshToken(value => value + 1)
     source.addEventListener('orders', refresh)
@@ -140,11 +178,11 @@ export function App() {
     window.addEventListener('focus', refresh)
     const poll = window.setInterval(refresh, 60_000)
     return () => { source.close(); window.clearInterval(poll); window.removeEventListener('online', refresh); window.removeEventListener('focus', refresh) }
-  }, [user])
-  async function logout() { try { await api('/auth/logout', { method: 'POST' }, user?.csrf_token) } finally { setUser(null); setPage('dashboard') } }
+  }, [user, offline])
+  async function logout() { try { await api('/auth/logout', { method: 'POST' }, user?.csrf_token) } finally { clearQueueSnapshot(); setUser(null); setPage('dashboard') } }
   return <main className="min-h-screen bg-slate-50 px-3 py-4 pb-24 text-slate-900 sm:px-4 sm:py-8"><div className="mx-auto max-w-2xl"><header className="mb-5 flex items-center justify-between gap-3 sm:mb-7"><div className="flex items-center gap-3"><img src="/icon.svg" alt="" className="h-10 w-10 sm:h-12 sm:w-12" /><div><h1 className="text-lg font-bold sm:text-xl">Ozon Production</h1>{!isShopWorker && <p className="text-sm text-slate-600">Управление производством</p>}</div></div>{isShopWorker && <button onClick={logout} className="min-h-11 rounded-lg border bg-white px-3 text-sm">Выйти</button>}</header>
-    {health?.mock_mode && <p className="mb-5 rounded-xl bg-amber-100 p-3 font-semibold text-amber-900">MOCK MODE · Тестовый режим</p>}{!online && <p role="status" className="mb-5 rounded-xl bg-amber-100 p-3">Нет соединения. Данные недоступны.</p>}
-    {user && <OzonSyncStatus refreshToken={refreshToken} />}
-    {loading ? <p>Загрузка…</p> : !user ? <Login onLogin={value => { setUser(value); setPage(landingPage(value)) }} /> : <>{isShopWorker ? <nav aria-label="Разделы работника" className="worker-nav">{([['mine', 'Мои задачи'], ['queue', 'Очередь']] as const).map(([target, label]) => <button key={target} aria-current={page === target ? 'page' : undefined} onClick={() => { setFilter(''); setPage(target) }}>{label}</button>)}<button aria-current={filter === 'blocked' ? 'page' : undefined} onClick={() => open('queue', 'blocked')}>Проблемы</button><button onClick={() => setPage('notifications')}>Уведомления</button></nav> : <nav aria-label="Основная навигация" className="mb-5 flex flex-wrap gap-2">{user.permissions.includes('analytics.view') && <button onClick={() => setPage('dashboard')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Главная</button>}<button onClick={() => setPage('mine')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Мои задачи</button><button onClick={() => open('queue')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Очередь</button>{user.permissions.includes('finance.view') && <button onClick={() => open('money-at-risk')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Деньги под угрозой</button>}{user.permissions.includes('procurement.view') && <button onClick={() => setPage('procurement')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Закупки</button>}{user.permissions.includes('manager_tasks.view') && <button onClick={() => open('manager-tasks')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Задачи руководителя</button>}{user.permissions.includes('product_profiles.manage') && <button onClick={() => setPage('product-profiles')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Нормативы</button>}{user.permissions.includes('users.view') && <button onClick={() => setPage('users')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Пользователи</button>}<button onClick={() => setPage('account')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Профиль</button><button onClick={() => setPage('notifications')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Уведомления</button>{user.roles.some(role => ['ADMIN', 'SUPER_ADMIN'].includes(role)) && <button onClick={() => setPage('ozon-integration')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Ozon</button>}<button onClick={logout} className="rounded-lg bg-white px-4 py-3 shadow-sm">Выйти</button></nav>}{page === 'dashboard' && user.permissions.includes('analytics.view') && <Dashboard open={open} refreshToken={refreshToken} />}{page === 'queue' && <Orders key={`${filter}:${page}`} current={user} mine={false} initialFilter={filter} refreshToken={refreshToken} />}{page === 'mine' && <Orders current={user} mine refreshToken={refreshToken} />}{page === 'money-at-risk' && user.permissions.includes('finance.view') && <MoneyAtRisk key={filter} initialBucket={filter} refreshToken={refreshToken} />}{page === 'procurement' && user.permissions.includes('procurement.view') && <Procurement current={user} refreshToken={refreshToken} />}{page === 'manager-tasks' && user.permissions.includes('manager_tasks.view') && <ManagerTasks key={filter} current={user} initialStatus={filter} refreshToken={refreshToken} />}{page === 'product-profiles' && user.permissions.includes('product_profiles.manage') && <ProductProfiles current={user} />}{page === 'users' && user.permissions.includes('users.view') && <Users current={user} />}{page === 'ozon-integration' && user.roles.some(role => ['ADMIN', 'SUPER_ADMIN'].includes(role)) && <OzonIntegration csrf={user.csrf_token} refreshToken={refreshToken} />}{page === 'account' && <Account current={user} />}{page === 'notifications' && <Notifications current={user} refreshToken={refreshToken} open={openNotice} />}</>}
+    {health?.mock_mode && <p className="mb-5 rounded-xl bg-amber-100 p-3 font-semibold text-amber-900">MOCK MODE · Тестовый режим</p>}
+    {user && !offline && <OzonSyncStatus refreshToken={refreshToken} />}
+    {offline ? <OfflineQueue reconnecting={reconnecting} retry={() => setRetryToken(token => token + 1)} forget={() => { clearQueueSnapshot(); setUser(null); setRefreshToken(token => token + 1) }} /> : loading ? <p>Загрузка…</p> : !user ? <Login onLogin={value => { clearQueueSnapshot(); setUser(value); setPage(landingPage(value)) }} /> : <>{isShopWorker ? <nav aria-label="Разделы работника" className="worker-nav">{([['mine', 'Мои задачи'], ['queue', 'Очередь']] as const).map(([target, label]) => <button key={target} aria-current={page === target ? 'page' : undefined} onClick={() => { setFilter(''); setPage(target) }}>{label}</button>)}<button aria-current={filter === 'blocked' ? 'page' : undefined} onClick={() => open('queue', 'blocked')}>Проблемы</button><button onClick={() => setPage('notifications')}>Уведомления</button></nav> : <nav aria-label="Основная навигация" className="mb-5 flex flex-wrap gap-2">{user.permissions.includes('analytics.view') && <button onClick={() => setPage('dashboard')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Главная</button>}<button onClick={() => setPage('mine')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Мои задачи</button><button onClick={() => open('queue')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Очередь</button>{user.permissions.includes('finance.view') && <button onClick={() => open('money-at-risk')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Деньги под угрозой</button>}{user.permissions.includes('procurement.view') && <button onClick={() => setPage('procurement')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Закупки</button>}{user.permissions.includes('manager_tasks.view') && <button onClick={() => open('manager-tasks')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Задачи руководителя</button>}{user.permissions.includes('product_profiles.manage') && <button onClick={() => setPage('product-profiles')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Нормативы</button>}{user.permissions.includes('users.view') && <button onClick={() => setPage('users')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Пользователи</button>}<button onClick={() => setPage('account')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Профиль</button><button onClick={() => setPage('notifications')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Уведомления</button>{user.roles.some(role => ['ADMIN', 'SUPER_ADMIN'].includes(role)) && <button onClick={() => setPage('ozon-integration')} className="rounded-lg bg-white px-4 py-3 shadow-sm">Ozon</button>}<button onClick={logout} className="rounded-lg bg-white px-4 py-3 shadow-sm">Выйти</button></nav>}{page === 'dashboard' && user.permissions.includes('analytics.view') && <Dashboard open={open} refreshToken={refreshToken} />}{page === 'queue' && <Orders key={`${filter}:${page}`} current={user} mine={false} initialFilter={filter} refreshToken={refreshToken} />}{page === 'mine' && <Orders current={user} mine refreshToken={refreshToken} />}{page === 'money-at-risk' && user.permissions.includes('finance.view') && <MoneyAtRisk key={filter} initialBucket={filter} refreshToken={refreshToken} />}{page === 'procurement' && user.permissions.includes('procurement.view') && <Procurement current={user} refreshToken={refreshToken} />}{page === 'manager-tasks' && user.permissions.includes('manager_tasks.view') && <ManagerTasks key={filter} current={user} initialStatus={filter} refreshToken={refreshToken} />}{page === 'product-profiles' && user.permissions.includes('product_profiles.manage') && <ProductProfiles current={user} />}{page === 'users' && user.permissions.includes('users.view') && <Users current={user} />}{page === 'ozon-integration' && user.roles.some(role => ['ADMIN', 'SUPER_ADMIN'].includes(role)) && <OzonIntegration csrf={user.csrf_token} refreshToken={refreshToken} />}{page === 'account' && <Account current={user} />}{page === 'notifications' && <Notifications current={user} refreshToken={refreshToken} open={openNotice} />}</>}
   </div></main>
 }

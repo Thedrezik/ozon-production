@@ -7,7 +7,9 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:offline": "node scripts/test-offline.mjs",
+    "test:offline:browser": "node scripts/test-offline-browser.mjs"
   },
   "dependencies": {
     "@zxing/browser": "^0.1.5",

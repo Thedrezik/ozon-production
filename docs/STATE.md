@@ -1,6 +1,6 @@
 # PROJECT STATE
 
-Last updated: 2026-10-01
+Last updated: 2026-10-02
 
 ## Completed
 
@@ -35,17 +35,19 @@ Last updated: 2026-10-01
 
 - Task 026: local storage interface, bounded validated/compressed photos for orders/blockers/comments, authenticated galleries, audit/timeline, posting QR and PWA camera barcode lookup.
 
+- Task 027: short-lived tab-scoped read-only offline queue, cached-shell reload, explicit OFFLINE/stale/time display, session-checked reconnect/server refresh, conflict feedback and automated production-PWA browser checks.
+
 ## Current
 
-- Task 026 complete. Migration head: `0020_photos`. Photos use the existing persistent uploads volume; apply migrations before starting the API. No commit or push.
+- Task 027 complete. Read-only offline strategy documented in DECISIONS.md. Migration head unchanged: `0020_photos`. No commit or push.
 
 ## Next
 
-- Task 026 finished; task 027 has not been started.
+- Task 027 finished; task 028 has not been started.
 
 ## Known Issues
 
-- Docker/Caddy executables are unavailable here; PostgreSQL/Compose and Caddy runtime checks could not be run for task 026. Real Ozon connection/delivery remains an HTTPS deployment check.
+- Docker/Caddy executables are unavailable here; PostgreSQL/Compose and Caddy runtime checks could not be run for task 027. Real Ozon connection/delivery remains an HTTPS deployment check.
 - Starlette emits a dependency deprecation warning about its TestClient/httpx integration; tests pass.
 - Web Push UI smoke passed on mock data; actual OS push reception awaits deployment with VAPID/HTTPS. The earlier two-browser SSE scenario still awaits a running deployment.
 - Real account import remains a deployment check. All automated import validation uses synthetic fixtures/mock HTTP; no live Ozon calls were made.
@@ -53,6 +55,8 @@ Last updated: 2026-10-01
 - Physical phone camera/HTTPS PWA validation remains a deployment check. Automated mobile UI and synthetic camera QR scanning passed. HEIC/HEIF is unsupported; upload JPEG, PNG or WebP.
 - Additional integration/manager automation rules await their source data and later tasks; reconciliation errors and cancellation-after-start already use source-keyed tasks.
 - Initial unknown postings older than the configured discovery window (30 days) require the existing historical importer. Outage discovery is capped at the verified 365-day API window; known nonterminal postings are checked independently. API_KEY_EXPIRING now uses the encrypted credential expiration configuration.
+
+- Offline queue retains only the last loaded page for up to one hour in the same tab; a new tab needs a network queue load. No offline login, filters, details, photos or mutation queue. Private-device use remains necessary for local display snapshots.
 
 ## Ozon Integration
 
@@ -64,7 +68,7 @@ Last updated: 2026-10-01
 
 ## Last Tests
 
-- Backend full suite: 202 passed. Final focused files/orders/blockers/migration checks: 17 passed. New cases cover compression, type spoofing, size limit, filenames/traversal, blocker/comment binding, CSRF/RBAC, QR lookup, alternate storage and rollback cleanup; local storage survives reopening.
-- Ruff app/tests/Alembic, frontend lint/typecheck/production build and `git diff --check` passed. Build used sandbox escalation for esbuild directory reads.
-- Headless Edge at mobile viewport on an isolated mock DB: upload/gallery, actual QR decoding, exact order opening, camera-denied fallback and synthetic camera scan/track cleanup passed. `/api/health` and `/api/health/ready` returned 200.
-- SQLite Alembic upgrade/downgrade/upgrade through `0020_photos` passed. Compose already mounts `uploads:/data/uploads`; Docker is unavailable, so container/PostgreSQL/persistent-volume runtime checks remain unverified. Existing Starlette/httpx and Alembic deprecation warnings remain.
+- Backend full suite: 202 passed, including auth/RBAC, status conflicts and health/readiness. Ruff app/tests/Alembic passed (run from backend).
+- Frontend lint/typecheck/production build, offline snapshot unit checks, push-worker checks and git diff --check passed. Build required sandbox escalation for esbuild directory reads.
+- Headless Edge with the actual production build/generated service worker and synthetic local mock API: offline reload/shell/cached queue, OFFLINE + unchanged timestamp/stale warning, reconnect + fresh backend data, no deferred writes, live 409 refresh/message, backend outage while browser stays online, auth revocation/cleanup, offline deletion and no API cache all passed.
+- Docker executable is unavailable: Compose build/up, container Alembic, ps and container health/readiness were not run. No backend/migration change in task 027. Existing Starlette/httpx and Alembic dependency deprecation warnings remain.
