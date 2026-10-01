@@ -11,7 +11,7 @@ const sources = ['BLOCKER', 'DEADLINE_RISK', 'STALLED_ORDER', 'UNASSIGNED_ORDER'
 const sourceNames: Record<string, string> = {
   BLOCKER: 'Проблема', DEADLINE_RISK: 'Риск срока', STALLED_ORDER: 'Заказ без движения',
   UNASSIGNED_ORDER: 'Нет ответственного', PROCUREMENT_OVERDUE: 'Просрочена закупка',
-  OZON_CANCELLED_AFTER_START: 'Отмена после начала', OZON_SYNC_ERROR: 'Ошибка Ozon', API_KEY_EXPIRING: 'Ключ Ozon',
+  OZON_CANCELLED_AFTER_START: 'Отмена после начала', OZON_SYNC_ERROR: 'Ошибка Ozon', OZON_RECONCILIATION_ERROR: 'Синхронизация Ozon', API_KEY_EXPIRING: 'Ключ Ozon',
 }
 const severityNames: Record<string, string> = { LOW: 'Низкая', MEDIUM: 'Средняя', HIGH: 'Высокая', CRITICAL: 'Критическая' }
 const statusNames: Record<string, string> = { OPEN: 'Открыта', IN_PROGRESS: 'В работе', RESOLVED: 'Решена', DISMISSED: 'Отклонена' }

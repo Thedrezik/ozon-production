@@ -1,6 +1,6 @@
 # Task 023 — Ozon Reconciliation
 
-status: pending  
+status: completed
 complexity: HIGH  
 recommended_model: GPT-6 Sol
 reasoning: Medium
@@ -50,12 +50,12 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Пропущенный webhook восстанавливается reconciliation.
-- [ ] Повторная sync идемпотентна.
-- [ ] Ошибка Ozon не ломает локальную производственную работу.
-- [ ] Последняя успешная sync отображается.
-- [ ] Tests проходят.
-- [ ] STATE.md обновлён.
+- [x] Пропущенный webhook восстанавливается reconciliation.
+- [x] Повторная sync идемпотентна.
+- [x] Ошибка Ozon не ломает локальную производственную работу.
+- [x] Последняя успешная sync отображается.
+- [x] Tests проходят.
+- [x] STATE.md обновлён.
 
 ## Completion
 
@@ -66,7 +66,7 @@ reasoning: Medium
 3. Запустить frontend tests/lint/typecheck, если задача затрагивает frontend.
 4. Исправить обнаруженные ошибки.
 5. Обновить `/docs/STATE.md`.
-6. Изменить `status: pending` этого task на `status: completed`, если задача полностью закончена.
+6. Изменить `status: completed` этого task на `status: completed`, если задача полностью закончена.
 
 Финальный отчёт должен быть коротким:
 

@@ -220,3 +220,41 @@ Local operation:
 Automated coverage uses synthetic payloads, fixtures and mock HTTP only. Real Ozon
 handshake/delivery, Caddy runtime and PostgreSQL checks remain deployment checks
 when Docker is unavailable locally.
+
+## Reconciliation — task 023
+
+After `alembic upgrade head` (migration `0018_ozon_reconciliation`), set
+`OZON_RECONCILIATION_ENABLED=true` and restart the backend. Earlier descriptions
+of no startup/periodic requests apply with this setting disabled, its default.
+The lifespan owns one sequential loop: run immediately, then wait
+`OZON_RECONCILIATION_INTERVAL_SECONDS=240` after completion. Deploy one API worker.
+No Redis, broker or new import mechanism is introduced.
+
+`OZON_RECONCILIATION_LOOKBACK_DAYS=30` controls discovery, with a one-day overlap
+on recovery and an end date one day ahead. A long outage widens the window, capped
+at 365 days. Use the existing explicit importer for initial older history or
+outages exceeding that limit. Known nonterminal postings absent from the v4 list
+are refreshed through existing v3 get, never deleted or cancelled merely because
+they are absent. Terminal `cancelled`/`delivered` postings stop get backfill.
+Local mock seed scenarios without Ozon snapshots stay independent of API fixtures.
+
+The shared upsert only changes external fields and item data; production status,
+assignment, blockers, comments, Manager Tasks and manual priority remain local.
+Posting notifications/cancellation tasks use the same keys as webhook processing.
+Updates include status/substatus, shipment dates, delivery intervals and confirmed
+raw tariff data. The conservative normalized tariff mapping limitation from task
+021 still applies; Priority/Tariff/Money at Risk use their existing read-time logic.
+
+`GET /api/ozon/sync-state` requires `orders.view`, returns `last_attempt_at`,
+`last_successful_sync`, status, safe error code, age in seconds and staleness.
+`OZON_STALE_AFTER_SECONDS=600` controls the threshold; no full successful run means
+unknown age and stale data. Mock and real freshness are isolated. Failed pages
+roll back domain writes, preserve the previous success and persist the error.
+One `OZON_SYNC_ERROR` notification is emitted per recipient/outage, with no retry
+spam. A source-keyed Manager Task closes on success and reopens on a later outage.
+The signed-in UI shows freshness and errors via existing SSE and periodic refresh.
+
+The task adds no new upstream contract. It reuses the official contracts verified
+for tasks 021/022 on 2026-10-01 above. This session's web reader encountered the
+same redirect loop and browser access timed out; no new API fields were inferred.
+All automated verification uses fixtures/mock HTTP, never a production account.

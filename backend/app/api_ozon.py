@@ -7,9 +7,17 @@ from sqlalchemy import select
 from app.auth import Db, require
 from app.models import AuditLog, OzonWebhookEvent, User, utc_now
 from app.ozon import OzonError
-from app.ozon_import import import_fbs, validate_window
+from app.ozon_import import import_fbs, posting_sync_lock, validate_window
 
 router = APIRouter(prefix="/api/ozon")
+
+
+@router.get("/sync-state")
+def reconciliation_state(request: Request, db: Db,
+                         actor: Annotated[User, Depends(require("orders.view"))]) -> dict:
+    from app.ozon_reconciliation import sync_status
+
+    return sync_status(db, request.app.state.settings)
 
 
 @router.post("/webhook/events/{event_id}/retry")
@@ -40,9 +48,10 @@ class ImportWindow(BaseModel):
 def import_postings(payload: ImportWindow, request: Request, db: Db,
                     actor: Annotated[User, Depends(require("settings.manage"))]) -> dict:
     try:
-        result = import_fbs(db, request.app.state.ozon_client, payload.since, payload.to,
-                            is_mock=request.app.state.settings.ozon_mock_mode, actor_id=actor.id)
-        db.commit()
+        with posting_sync_lock:
+            result = import_fbs(db, request.app.state.ozon_client, payload.since, payload.to,
+                                is_mock=request.app.state.settings.ozon_mock_mode, actor_id=actor.id)
+            db.commit()
     except OzonError as exc:
         db.rollback()
         raise HTTPException(502, type(exc).__name__) from None

@@ -21,6 +21,7 @@ from app.database import create_db_engine, database_is_ready
 from app.logging import configure_logging
 from app.order_events import OrderEvents
 from app.ozon import create_ozon_client
+from app.ozon_reconciliation import reconciliation_loop
 from app.ozon_webhook import processing_loop as ozon_webhook_loop
 from app.ozon_webhook import router as ozon_webhook_router
 from app.telegram import configured as telegram_configured
@@ -39,6 +40,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         _app.state.ozon_client = create_ozon_client(config)
         stop = asyncio.Event()
         workers = []
+        if config.ozon_reconciliation_enabled:
+            workers.append(asyncio.create_task(reconciliation_loop(
+                engine, _app.state.ozon_client, config, _app.state.order_events, stop)))
         if config.ozon_webhook_enabled:
             workers.append(asyncio.create_task(ozon_webhook_loop(
                 engine, _app.state.ozon_client, config, _app.state.order_events, stop)))

@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     money_risk_cutoff_hours: str = "12,16"
     ozon_mock_mode: bool = True
     ozon_webhook_enabled: bool = False
+    ozon_reconciliation_enabled: bool = False
+    ozon_reconciliation_interval_seconds: int = Field(default=240, ge=60, le=3600)
+    ozon_reconciliation_lookback_days: int = Field(default=30, ge=1, le=364)
+    ozon_stale_after_seconds: int = Field(default=600, ge=60, le=86400)
     # Exact trusted reverse-proxy peers; never trust arbitrary forwarded headers.
     ozon_webhook_trusted_proxies: str = ""
     upload_dir: str = "/data/uploads"

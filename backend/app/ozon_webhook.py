@@ -29,7 +29,7 @@ from app.manager_tasks import ensure_task, resolve_source
 from app.models import Order, OzonWebhookEvent, utc_now
 from app.notifications import emit, manager_ids, sync_deadline_notifications
 from app.ozon import OzonError
-from app.ozon_import import diagnostic_json, upsert_posting
+from app.ozon_import import diagnostic_json, posting_sync_lock, upsert_posting
 
 router = APIRouter(prefix="/api/ozon")
 logger = logging.getLogger(__name__)
@@ -229,7 +229,44 @@ def refresh_projections(db: Session, order: Order, config) -> None:
     sync_deadline_notifications(db, config.organization_timezone)
 
 
+def apply_posting(db: Session, raw: dict, config, *, from_get: bool = False) -> bool:
+    """Shared upsert and domain effects for push and reconciliation."""
+    previous = db.scalar(select(Order).where(
+        Order.posting_number == raw["posting_number"]).with_for_update())
+    created = previous is None
+    was_cancelled = previous is not None and previous.ozon_status == "cancelled"
+    changed = upsert_posting(db, import_shape(raw) if from_get else raw, is_mock=config.ozon_mock_mode,
+                             actor_id=None, source_raw=raw)
+    order = db.scalar(select(Order).where(Order.posting_number == raw["posting_number"]))
+    recipients = manager_ids(db)
+    if created:
+        emit(db, type="NEW_ORDER", event_key=f"order:{order.id}", user_ids=recipients,
+             title=f"Новый заказ {order.posting_number}", body="Заказ добавлен в очередь",
+             url=f"/orders/{order.id}")
+    if order.ozon_status == "cancelled":
+        if order.production_started_at is not None:
+            ensure_task(db, source_type="OZON_CANCELLED_AFTER_START", source_id=order.id,
+                        order_id=order.id, title=f"Ozon отменил {order.posting_number}",
+                        description="Производство уже начато. Проверьте дальнейшие действия.",
+                        severity="CRITICAL")
+        if not was_cancelled:
+            emit(db, type="ORDER_CANCELLED", event_key=f"order:{order.id}",
+                 user_ids=recipients, title=f"Отмена {order.posting_number}",
+                 body="Ozon отменил отправление. Проверьте производство.",
+                 url=f"/orders/{order.id}")
+    else:
+        resolve_source(db, source_type="OZON_CANCELLED_AFTER_START", source_id=order.id)
+    if changed:
+        refresh_projections(db, order, config)
+    return changed
+
+
 def process_one(engine, client, config, events) -> bool:
+    with posting_sync_lock:
+        return _process_one(engine, client, config, events)
+
+
+def _process_one(engine, client, config, events) -> bool:
     """Commit domain writes and inbox completion atomically; return whether work existed."""
     event_id = None
     try:
@@ -261,33 +298,8 @@ def process_one(engine, client, config, events) -> bool:
                         "awaiting_approve", "awaiting_packaging", "awaiting_registration", "awaiting_verification"):
                     event.status = "IGNORED"
                 else:
-                    previous = db.scalar(select(Order).where(
-                        Order.posting_number == event.posting_number).with_for_update())
-                    created = previous is None
-                    was_cancelled = previous is not None and previous.ozon_status == "cancelled"
-                    changed = upsert_posting(db, import_shape(raw), is_mock=event.is_mock,
-                                             actor_id=None, source_raw=raw)
+                    changed = apply_posting(db, raw, config, from_get=True)
                     order = db.scalar(select(Order).where(Order.posting_number == event.posting_number))
-                    recipients = manager_ids(db)
-                    if created:
-                        emit(db, type="NEW_ORDER", event_key=f"order:{order.id}", user_ids=recipients,
-                             title=f"Новый заказ {order.posting_number}", body="Заказ добавлен в очередь",
-                             url=f"/orders/{order.id}")
-                    if order.ozon_status == "cancelled":
-                        if order.production_started_at is not None:
-                            ensure_task(db, source_type="OZON_CANCELLED_AFTER_START", source_id=order.id,
-                                        order_id=order.id, title=f"Ozon отменил {order.posting_number}",
-                                        description="Производство уже начато. Проверьте дальнейшие действия.",
-                                        severity="CRITICAL")
-                        if not was_cancelled:
-                            emit(db, type="ORDER_CANCELLED", event_key=f"order:{order.id}",
-                                 user_ids=recipients, title=f"Отмена {order.posting_number}",
-                                 body="Ozon отменил отправление. Проверьте производство.",
-                                 url=f"/orders/{order.id}")
-                    else:
-                        resolve_source(db, source_type="OZON_CANCELLED_AFTER_START", source_id=order.id)
-                    if changed:
-                        refresh_projections(db, order, config)
                     event.status = "PROCESSED"
             event.attempts += 1
             event.processed_at = utc_now()

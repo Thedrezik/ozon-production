@@ -399,6 +399,18 @@ class TelegramLink(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class OzonSyncState(Base):
+    __tablename__ = "ozon_sync_state"
+
+    # Separate mock and real freshness, including when switching deployment mode.
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_successful_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(20), default="NEVER")
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    error_episode: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class OzonPostingData(Base):
     """Latest external snapshot, never exposed in production order responses."""
     __tablename__ = "ozon_posting_data"

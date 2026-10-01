@@ -1,8 +1,10 @@
 """Explicit, transactional FBS import. Updates only the external field allowlist."""
 
 import json
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from threading import RLock
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
@@ -19,6 +21,10 @@ from app.models import (
     utc_now,
 )
 from app.ozon import OzonClientInterface, OzonResponseError
+
+# One API process: serialize upstream snapshots and their writes across push,
+# reconciliation and explicit import, so a fetched list cannot undo a newer push.
+posting_sync_lock = RLock()
 
 
 def validate_window(since: datetime, to: datetime) -> None:
@@ -171,7 +177,16 @@ def upsert_posting(db: Session, raw: dict, *, is_mock: bool, actor_id: int | Non
 
 
 def import_fbs(db: Session, client: OzonClientInterface, since: datetime, to: datetime,
-               *, is_mock: bool, actor_id: int) -> dict:
+               *, is_mock: bool, actor_id: int | None,
+               on_posting: Callable[[dict], bool] | None = None) -> dict:
+    with posting_sync_lock:
+        return _import_fbs(db, client, since, to, is_mock=is_mock,
+                           actor_id=actor_id, on_posting=on_posting)
+
+
+def _import_fbs(db: Session, client: OzonClientInterface, since: datetime, to: datetime,
+                *, is_mock: bool, actor_id: int | None,
+                on_posting: Callable[[dict], bool] | None = None) -> dict:
     """Caller commits once after all pages; any error rolls back the entire import."""
     validate_window(since, to)
     cursor = ""
@@ -183,7 +198,8 @@ def import_fbs(db: Session, client: OzonClientInterface, since: datetime, to: da
         if not isinstance(page.get("postings"), list) or type(page.get("has_next")) is not bool:
             raise OzonResponseError()
         for raw in page["postings"]:
-            changed += upsert_posting(db, raw, is_mock=is_mock, actor_id=actor_id)
+            changed += (on_posting(raw) if on_posting else
+                        upsert_posting(db, raw, is_mock=is_mock, actor_id=actor_id))
             received += 1
         if not page["has_next"]:
             return {"received": received, "changed": changed, "pages": pages}
