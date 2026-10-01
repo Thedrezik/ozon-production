@@ -33,5 +33,6 @@ export default defineConfig({
       },
     }),
   ],
-  server: { proxy: { '/api': 'http://localhost:8000' } },
+  server: { proxy: { '/api': { target: 'http://localhost:8000', changeOrigin: true,
+    configure: proxy => proxy.on('proxyReq', request => request.setHeader('Origin', 'http://localhost:8000')) } } },
 })

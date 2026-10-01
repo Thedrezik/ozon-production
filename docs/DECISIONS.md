@@ -51,3 +51,7 @@ Keep queue search and filters on the existing orders endpoint, calculate priorit
 ## 016 — Shared SSE invalidation and API refresh
 
 Reuse the single-worker in-process order event bus as an invalidation signal for all active operational screens. Publish after commit so another browser reads committed data. The browser owns one EventSource per signed-in session; its automatic reconnect triggers an API refresh, as do focus, online and a 60-second timer. SSE carries no authoritative state or replay log. This fits the single-instance deployment and recovers missed events through normal API reads without Redis or a new table.
+
+## 017 — Transactional notification fan-out
+
+Create recipient notifications in the same transaction as existing blocker, procurement and status actions. A unique `(user_id, dedupe_key)` constraint makes replay safe; the key combines notification type and stable source identity. Store per-channel delivery rows with IN_APP delivered immediately and opted-in WEB_PUSH/TELEGRAM pending future adapters. Manager notification reads reconcile time-based order and tariff deadlines from the existing Priority Engine and Money at Risk data, without another event bus or broker. Mandatory in-app admin alerts override preferences; external channels remain optional.

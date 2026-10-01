@@ -20,6 +20,7 @@ from app.models import (
     User,
     utc_now,
 )
+from app.notifications import emit, manager_ids
 from app.procurement import (
     NEXT_STATUSES,
     STATUSES,
@@ -164,6 +165,12 @@ def create_task(payload: CreateInput, db: Db, request: Request,
                                   description=f"Закупка #{row.id}: {name}", actor_user_id=actor.id))
     db.add(AuditLog(actor_user_id=actor.id, action="procurement.created", detail=f"#{row.id}"))
     sync_overdue(db, row)
+    recipients = manager_ids(db)
+    if row.responsible_user_id is not None:
+        recipients.append(row.responsible_user_id)
+    emit(db, type="PROCUREMENT_CREATED", event_key=f"procurement:{row.id}",
+         user_ids=recipients, title=f"Новая закупка: {name}",
+         body=f"{row.quantity} {unit}", url="/procurement")
     db.commit()
     for order_id in order_ids:
         request.app.state.order_events.publish(order_id)

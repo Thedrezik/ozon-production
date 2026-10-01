@@ -17,6 +17,7 @@ from app.models import (
     User,
     utc_now,
 )
+from app.notifications import emit, manager_ids
 from app.orders import transition
 
 router = APIRouter(prefix="/api/blockers")
@@ -103,6 +104,9 @@ def create_blocker(payload: BlockerInput, db: Db, request: Request,
     ensure_task(db, source_type="BLOCKER", source_id=row.id, order_id=order.id,
                 title=f"Проблема заказа {order.posting_number}", description=description,
                 severity=payload.severity, due_at=payload.expected_resolution_at)
+    emit(db, type="BLOCKER_CREATED", event_key=f"blocker:{row.id}",
+         user_ids=manager_ids(db), title=f"Проблема заказа {order.posting_number}",
+         body=description, url=f"/orders/{order.id}")
     if previous:
         transition(db, order, "BLOCKED", actor.id)
     db.add(OrderTimelineEvent(order_id=order.id, event_type="blocker_created",
@@ -135,6 +139,10 @@ def update_blocker(blocker_id: int, payload: BlockerUpdate, db: Db, request: Req
     if payload.status not in ACTIVE:
         row.resolved_at = row.updated_at
         resolve_source(db, source_type="BLOCKER", source_id=row.id)
+        if payload.status == "RESOLVED":
+            emit(db, type="BLOCKER_RESOLVED", event_key=f"blocker:{row.id}",
+                 user_ids=manager_ids(db), title=f"Проблема устранена: {order.posting_number}",
+                 body=row.description, url=f"/orders/{order.id}")
         db.flush()
         remaining = db.scalar(select(Blocker.id).where(Blocker.order_id == order_id,
                                                          Blocker.status.in_(ACTIVE)).limit(1))

@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import InternalStatus, Order, OrderItem, StatusHistory, utc_now
+from app.notifications import emit, manager_ids
 
 STATUSES = (
     "NEW", "QUEUED", "SENT_TO_PRODUCTION", "IN_PRODUCTION", "BLOCKED",
@@ -43,6 +44,12 @@ def transition(db: Session, order: Order, status: str, actor_id: int) -> None:
     if stamp and getattr(order, stamp) is None:
         setattr(order, stamp, utc_now())
     db.add(StatusHistory(order_id=order.id, old_status=old, new_status=status, changed_by=actor_id))
+    if status in ("READY_TO_SHIP", "CANCELLED"):
+        kind = "READY_TO_SHIP" if status == "READY_TO_SHIP" else "ORDER_CANCELLED"
+        emit(db, type=kind, event_key=f"order:{order.id}:{status}",
+             user_ids=manager_ids(db), title=f"Заказ {order.posting_number}",
+             body="Готов к отгрузке" if status == "READY_TO_SHIP" else "Отменён",
+             url=f"/orders/{order.id}")
 
 
 def seed_mock_orders(db: Session) -> int:

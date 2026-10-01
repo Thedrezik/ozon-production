@@ -1,6 +1,6 @@
 # Task 017 — Notification Engine
 
-status: pending  
+status: completed
 complexity: MEDIUM  
 recommended_model: GPT-6 Sol
 reasoning: Low
@@ -48,12 +48,12 @@ reasoning: Low
 
 ## Acceptance Criteria
 
-- [ ] Notification создаётся один раз на событие.
-- [ ] Preferences учитываются.
-- [ ] Manager получает blocker notification.
-- [ ] In-app notifications отображаются.
-- [ ] Tests на deduplication проходят.
-- [ ] STATE.md обновлён.
+- [x] Notification создаётся один раз на событие.
+- [x] Preferences учитываются.
+- [x] Manager получает blocker notification.
+- [x] In-app notifications отображаются.
+- [x] Tests на deduplication проходят.
+- [x] STATE.md обновлён.
 
 ## Completion
 

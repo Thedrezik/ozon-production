@@ -9,6 +9,7 @@ from app.api_blockers import router as blockers_router
 from app.api_dashboard import router as dashboard_router
 from app.api_manager_tasks import router as manager_tasks_router
 from app.api_money_at_risk import router as money_at_risk_router
+from app.api_notifications import router as notifications_router
 from app.api_orders import router as orders_router
 from app.api_procurement import router as procurement_router
 from app.api_product_profiles import router as product_profiles_router
@@ -42,6 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(manager_tasks_router)
     app.include_router(procurement_router)
     app.include_router(money_at_risk_router)
+    app.include_router(notifications_router)
     app.include_router(dashboard_router)
 
     @app.get("/api/health")
