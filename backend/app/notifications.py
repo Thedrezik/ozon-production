@@ -2,7 +2,7 @@
 
 from datetime import timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -105,6 +105,7 @@ def sync_deadline_notifications(db: Session, timezone_name: str) -> int:
         ("DONE", "CANCELLED", "HANDED_TO_SHIPPING")), Order.ozon_status != "cancelled")).all()
     profiles, settings = production_profiles(db), priority_settings(db)
     count = 0
+    current_keys = set()
     for order in orders:
         deadline = order.shipment_deadline.replace(tzinfo=timezone.utc) if order.shipment_deadline.tzinfo is None else order.shipment_deadline
         if deadline <= now:
@@ -114,6 +115,7 @@ def sync_deadline_notifications(db: Session, timezone_name: str) -> int:
         else:
             kind = None
         if kind:
+            current_keys.add(f"{kind}:order:{order.id}:{deadline.isoformat()}")
             count += emit(db, type=kind, event_key=f"order:{order.id}:{deadline.isoformat()}",
                           user_ids=recipients, title=f"Заказ {order.posting_number}",
                           body="Срок отгрузки прошёл" if kind == "ORDER_OVERDUE" else
@@ -129,9 +131,25 @@ def sync_deadline_notifications(db: Session, timezone_name: str) -> int:
             amount = next((entry["amount"] for bucket in risk["buckets"] for entry in bucket["orders"]
                            if entry["at"] == next_step["starts_at"]), None)
             detail = f"Подтверждённый риск: {amount:.2f} ₽" if amount is not None else "Денежный эффект не подтверждён"
+            current_keys.add(f"TARIFF_DEADLINE:order:{order.id}:{next_step['starts_at'].isoformat()}")
             count += emit(db, type="TARIFF_DEADLINE",
                           event_key=f"order:{order.id}:{next_step['starts_at'].isoformat()}",
                           user_ids=recipients, title=f"Тариф заказа {order.posting_number}",
                           body=f"Следующая ступень через {int((next_step['starts_at'] - now).total_seconds() // 60)} мин. {detail}",
                           url=f"/orders/{order.id}")
+    # Preserve notices/receipts as history, but stop sending obsolete external alerts.
+    pending_ids = select(NotificationDelivery.notification_id).where(NotificationDelivery.status == "PENDING")
+    notices = db.scalars(select(Notification).where(Notification.type.in_(
+        ("SHIPMENT_DEADLINE", "ORDER_OVERDUE", "TARIFF_DEADLINE")),
+        or_(Notification.read_at.is_(None), Notification.id.in_(pending_ids)))).all()
+    obsolete = {notice.id for notice in notices if notice.dedupe_key not in current_keys}
+    for notice in notices:
+        if notice.id in obsolete and notice.read_at is None:
+            notice.read_at = now
+    if obsolete:
+        deliveries = db.scalars(select(NotificationDelivery).where(
+            NotificationDelivery.notification_id.in_(obsolete),
+            NotificationDelivery.status == "PENDING").with_for_update()).all()
+        for delivery in deliveries:
+            delivery.status = "SKIPPED"
     return count

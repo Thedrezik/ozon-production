@@ -164,3 +164,29 @@ One opt-in lifespan loop in the single API process runs immediately and then wai
 Persist attempt, last full success, safe error category and outage episode separately for mock/real mode. All posting changes and effects commit together; a failed run rolls back them and persists its error in a separate transaction. Emit one existing OZON_SYNC_ERROR notification per recipient/outage episode. Use the separate Manager Task source OZON_RECONCILIATION_ERROR with the mode's state ID to avoid collision with webhook event IDs; resolve on recovery and reopen that same task only for a new outage.
 
 List a rolling 30-day window with overlap, widened after outages up to the verified 365-day API limit. Check known nonterminal postings absent from the list through the existing get adapter in keyset batches. Never infer deletion or cancellation from absence. Local mock production seeds are excluded from get backfill unless they have an API snapshot. Unknown postings older than the configured initial window require the existing explicit historical import; outages beyond a year also require historical backfill. Store confirmed tariff source data without inventing signed normalized costs. Engines continue to calculate projections on reads, and publish SSE after commits, including unchanged success/recovery. Expose sync freshness via authenticated orders.view API and refresh the banner through existing SSE/focus/60-second polling.
+
+## 024 — External cancellation preserves production state
+
+All three ingestion paths (explicit import, push and reconciliation) use the existing
+`apply_posting` effects and external-only upsert in their transaction. Keep Ozon
+cancellation separate from internal production status: before production the posting
+is operationally closed (excluded from the normal queue, P4, no future risk/deadline
+alerts), while its local status and relationships remain intact. Explicit cancelled
+filters and exact order lookup expose the archive. Claim/production advancement is
+rejected; managers can explicitly cancel the internal workflow.
+
+Cancellation after a production timestamp or a started/completed stage creates the
+existing source-keyed critical Manager Task and alerts the assigned worker and
+managers through the existing Notification Engine. Replays retain staff decisions
+and do not duplicate tasks/notices. Never close blockers or remove comments,
+assignments, status history, timestamps, overrides or historical Manager Tasks.
+
+Changed external status/substatus and shipment/no-delay/delivery dates append safe
+old/new values to audit and readable timeline entries. Identical snapshots and
+nonoperational changes do not append duplicate timeline events. Projections remain
+read-time calculations, so deadline changes immediately affect priority and the
+risk classification of confirmed normalized tariff costs. No tariff dates/costs are
+inferred from shipment changes or raw unsigned Ozon discounts. Reconcile existing
+deadline notices: retain history, mark obsolete notices read and pending external
+deliveries SKIPPED, then emit current deadlines with existing stable keys. Publish
+SSE after commit via each existing caller. No migration or parallel subsystem.

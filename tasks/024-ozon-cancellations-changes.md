@@ -1,6 +1,6 @@
 # Task 024 — Ozon Cancellations and Changes
 
-status: pending  
+status: completed
 complexity: MEDIUM/HIGH  
 recommended_model: GPT-6 Sol
 reasoning: Medium
@@ -48,11 +48,11 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Cancelled-before-production корректно закрывается.
-- [ ] Cancelled-after-production-start создаёт задачу руководителя.
-- [ ] Изменение deadline вызывает recalculation.
-- [ ] История сохраняется.
-- [ ] STATE.md обновлён.
+- [x] Cancelled-before-production корректно закрывается.
+- [x] Cancelled-after-production-start создаёт задачу руководителя.
+- [x] Изменение deadline вызывает recalculation.
+- [x] История сохраняется.
+- [x] STATE.md обновлён.
 
 ## Completion
 

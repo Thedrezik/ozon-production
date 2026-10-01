@@ -32,6 +32,8 @@ TRANSITIONS = {
 
 
 def transition(db: Session, order: Order, status: str, actor_id: int) -> None:
+    if order.ozon_status == "cancelled" and status != "CANCELLED":
+        raise ValueError("Ozon cancelled this posting; manager review required")
     if status not in TRANSITIONS.get(order.internal_status, set()):
         raise ValueError("Invalid status transition")
     old = order.internal_status

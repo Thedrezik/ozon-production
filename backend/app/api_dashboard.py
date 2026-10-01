@@ -24,7 +24,7 @@ def dashboard(db: Db, request: Request,
     now = utc_now()
     orders = db.scalars(select(Order).options(selectinload(Order.items),
                                                 joinedload(Order.assignment).joinedload(Assignment.user))
-                        .where(Order.internal_status.notin_(ACTIVE))).all()
+                        .where(Order.internal_status.notin_(ACTIVE), Order.ozon_status != "cancelled")).all()
     profiles = production_profiles(db)
     settings = priority_settings(db)
     ranked = [(order, priority_for(order, profiles, settings, now)) for order in orders]
@@ -32,7 +32,8 @@ def dashboard(db: Db, request: Request,
     blocked = sum(order.internal_status == "BLOCKED" for order in orders)
     ready = sum(order.internal_status == "READY_TO_SHIP" for order in orders)
     overdue = db.scalar(select(func.count()).select_from(Order).where(
-        Order.shipment_deadline < now, Order.internal_status.notin_(("DONE", "CANCELLED")))) or 0
+        Order.shipment_deadline < now, Order.internal_status.notin_(("DONE", "CANCELLED")),
+        Order.ozon_status != "cancelled")) or 0
     sync_all_overdue(db)
     db.commit()
     task_counts = dict(db.execute(select(ManagerTask.status, func.count()).group_by(ManagerTask.status)).all())

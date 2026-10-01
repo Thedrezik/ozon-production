@@ -53,7 +53,7 @@ def test_queue_filters_assignment_permissions_and_history(tmp_path):
         response = admin.post("/api/users", headers=headers, json={"username": "viewer", "display_name": "Viewer", "password": "viewer-password-123", "roles": ["VIEWER"]})
         assert response.status_code == 201
         queue = admin.get("/api/orders?limit=2").json()
-        assert queue["total"] == 7 and len(queue["items"]) == 2
+        assert queue["total"] == 6 and len(queue["items"]) == 2
         assert admin.get("/api/orders?blocked=true").json()["total"] == 1
         assert admin.get("/api/orders?ready=true").json()["total"] == 1
         assert admin.get("/api/orders?overdue=true").json()["total"] == 1

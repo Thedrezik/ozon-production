@@ -8,6 +8,7 @@ from app.auth import Db, require
 from app.models import AuditLog, OzonWebhookEvent, User, utc_now
 from app.ozon import OzonError
 from app.ozon_import import import_fbs, posting_sync_lock, validate_window
+from app.ozon_webhook import apply_posting
 
 router = APIRouter(prefix="/api/ozon")
 
@@ -50,7 +51,9 @@ def import_postings(payload: ImportWindow, request: Request, db: Db,
     try:
         with posting_sync_lock:
             result = import_fbs(db, request.app.state.ozon_client, payload.since, payload.to,
-                                is_mock=request.app.state.settings.ozon_mock_mode, actor_id=actor.id)
+                                is_mock=request.app.state.settings.ozon_mock_mode, actor_id=actor.id,
+                                on_posting=lambda raw: apply_posting(
+                                    db, raw, request.app.state.settings, actor_id=actor.id))
             db.commit()
     except OzonError as exc:
         db.rollback()

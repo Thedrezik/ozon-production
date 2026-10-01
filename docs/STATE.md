@@ -29,18 +29,19 @@ Last updated: 2026-10-01
 - Task 022: verified Ozon FBS/rFBS push endpoint and TYPE_PING handshake, durable event inbox, idempotency, restart-safe processing/retries, shared get/upsert, cancellation manager tasks, existing notifications/projections and post-commit SSE.
 
 - Task 023: lifespan reconciliation via shared v4 cursor import/upsert and webhook effects, missing-posting get backfill, isolated mock/real sync state, deduplicated outage notifications/tasks, recovery, freshness banner and post-commit SSE.
+- Task 024: shared cancellation/date-change effects across import, webhook and reconciliation; cancelled queue/archive rules, responsible-worker alerts, stage-aware Manager Tasks, safe old/new audit/timeline, deadline notice retirement and read-time priority/risk refresh. Production history remains intact.
 
 ## Current
 
-- Task 023 complete. Apply migration `0018_ozon_reconciliation`, set `OZON_RECONCILIATION_ENABLED=true` and restart the backend. One API worker; immediate first run, configurable 240-second wait between runs. Freshness: `/api/ozon/sync-state` and signed-in UI. Webhook remains independently configurable.
+- Task 024 complete. No new migration; existing head is `0018_ozon_reconciliation`. External cancellation leaves internal production data intact, removes the posting from the normal queue and requires manager review after production starts. Import, webhook and reconciliation share effects; SSE follows commit.
 
 ## Next
 
-- Task 024 remains not started; no work performed on it.
+- Task 025 remains not started; no work performed on it.
 
 ## Known Issues
 
-- Docker/Caddy executables are unavailable here; PostgreSQL/Compose and Caddy runtime checks could not be run for task 023. Real Ozon connection/delivery remains an HTTPS deployment check.
+- Docker/Caddy executables are unavailable here; PostgreSQL/Compose and Caddy runtime checks could not be run for task 024. Real Ozon connection/delivery remains an HTTPS deployment check.
 - Starlette emits a dependency deprecation warning about its TestClient/httpx integration; tests pass.
 - Web Push UI smoke passed on mock data; actual OS push reception awaits deployment with VAPID/HTTPS. The earlier two-browser SSE scenario still awaits a running deployment.
 - Real account import remains a deployment check. All automated import validation uses synthetic fixtures/mock HTTP; no live Ozon calls were made.
@@ -59,8 +60,7 @@ Last updated: 2026-10-01
 
 ## Last Tests
 
-- Backend: all 174 pytest tests passed; Ruff passed (`cd backend; .venv/Scripts/python.exe -m ruff check --isolated app tests alembic`). Ozon tests use fixtures/mock HTTP exclusively.
-- Reconciliation: 15 new tests cover missed postings, cursor pages, external dates/substatus/tariff updates, local-data preservation, cancellation/task deduplication, absence backfill, error rollback/recovery, notification deduplication, last success/staleness/mode isolation, window limits, scheduler/lifespan, mock seeds and API availability during slow upstream HTTP.
-- Database: SQLite Alembic upgrade/downgrade/upgrade through `0018_ozon_reconciliation`, sync-state columns and real/mock rows verified. Docker/PostgreSQL unavailable.
-- Health: `/api/health` and `/api/health/ready` returned 200 in TestClient, including while reconciliation waited for upstream data.
-- Frontend: lint, typecheck and production/PWA build passed. Build needed execution outside the filesystem sandbox because esbuild was denied ancestor-directory access. `git diff --check` passed. Existing Starlette/httpx and Alembic deprecation warnings remain.
+- Backend: all 182 pytest tests passed; Ruff passed (`cd backend; .venv/Scripts/python.exe -m ruff check --isolated app tests alembic`). After the final dashboard exclusion, 9 focused changes/dashboard tests and Ruff passed again. Ozon validation uses synthetic fixtures/mock HTTP only.
+- Task 024: 8 new cases cover cancellation before/during/after production, blocked-after-start, legacy missing timestamps, worker/manager fan-out, source/snapshot deduplication, preserved local history, earlier/later deadlines, priority and Money at Risk categories, obsolete pending deliveries, cancellation risk removal, shared explicit import and post-commit SSE.
+- Health: `/api/health` and `/api/health/ready` return 200 in TestClient. Existing SQLite Alembic upgrade/downgrade/upgrade tests pass; no new migration. Docker executable is absent (PATH and standard Docker Desktop path); Compose/PostgreSQL runtime checks unavailable.
+- Frontend unchanged; frontend checks not required for task 024. `git diff --check` passed. Existing Starlette/httpx and Alembic deprecation warnings remain.

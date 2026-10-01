@@ -16,6 +16,7 @@ from app.models import (
     AuditLog,
     Order,
     OrderItem,
+    OrderTimelineEvent,
     OzonPostingData,
     StatusHistory,
     utc_now,
@@ -152,6 +153,31 @@ def upsert_posting(db: Session, raw: dict, *, is_mock: bool, actor_id: int | Non
     raw_json = diagnostic_json(source)
     if snapshot is not None and snapshot.raw_json == raw_json:
         return False
+    # Keep only operational external changes in public history; no raw customer data.
+    tracked = {
+        "ozon_status": "Статус Ozon", "ozon_substatus": "Подстатус Ozon",
+        "shipment_deadline": "Срок отгрузки",
+        "shipment_date_without_delay": "Отгрузка без задержки",
+        "ozon_delivering_date": "Передача в доставку",
+        "ozon_delivery_date_begin": "Начало доставки",
+        "ozon_delivery_date_end": "Конец доставки",
+    }
+
+    def history_value(value):
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=timezone.utc).isoformat() if value.tzinfo is None else value.isoformat()
+        return value
+
+    changes = {name: {"old": history_value(getattr(order, name)), "new": history_value(value)}
+               for name, value in fields.items() if name in tracked
+               and history_value(getattr(order, name)) != history_value(value)}
+    if created_id is None and changes:
+        detail = diagnostic_json({"order_id": order.id, "changes": changes})
+        db.add(AuditLog(actor_user_id=actor_id, action="ozon.posting.changed", detail=detail))
+        db.add(OrderTimelineEvent(order_id=order.id, event_type="ozon_changed",
+                                  description="Ozon: " + "; ".join(
+                                      f"{tracked[name]}: {change['old'] or '—'} → {change['new'] or '—'}"
+                                      for name, change in changes.items()), actor_user_id=actor_id))
     for name, value in fields.items():
         setattr(order, name, value)
     order.items = [OrderItem(product_name=p.name, offer_id=p.offer_id,

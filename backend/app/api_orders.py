@@ -112,7 +112,8 @@ def priority_for(order: Order, profiles: dict, settings: PrioritySettings, now) 
         (utc(order.tariff_deadline) if tariff is None else None),
         tariff_impact=max(delta, Decimal(0)) if delta is not None and next_step["currency"] == "RUB" else
         (order.tariff_impact if tariff is None else None),
-        order_value=order.order_value, internal_status=order.internal_status,
+        order_value=order.order_value,
+        internal_status="CANCELLED" if order.ozon_status == "cancelled" else order.internal_status,
         remaining_minutes=remaining if known else None,
         blocked=order.internal_status == "BLOCKED", override=order.priority_override,
         pinned=order.priority_pinned), now,
@@ -202,6 +203,9 @@ def list_orders(
     if not 1 <= limit <= 100 or offset < 0:
         raise HTTPException(422, "Invalid pagination")
     query = select(Order)
+    # Exact lookup and explicit cancellation filters retain access to the archive.
+    if order_id is None and ozon_status != "cancelled" and status != "CANCELLED":
+        query = query.where(Order.ozon_status != "cancelled")
     if order_id is not None:
         query = query.where(Order.id == order_id)
     if status:
@@ -297,6 +301,8 @@ def bulk_action(payload: BulkActionInput, db: Db, request: Request,
         if payload.status == "BLOCKED":
             raise HTTPException(409, "Create a blocker to mark orders blocked")
         for order in orders:
+            if order.ozon_status == "cancelled" and payload.status != "CANCELLED":
+                raise HTTPException(409, "Ozon cancelled this posting; manager review required")
             if order.internal_status == "BLOCKED" and payload.status != "CANCELLED":
                 active = db.scalar(select(Blocker.id).where(Blocker.order_id == order.id, Blocker.status.in_(("OPEN", "IN_PROGRESS"))).limit(1))
                 if active is not None:
@@ -472,7 +478,7 @@ def claim(order_id: int, db: Db, actor: Annotated[User, Depends(require("orders.
     order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if order is None:
         raise HTTPException(404, "Order not found")
-    if order.internal_status not in ("NEW", "QUEUED", "SENT_TO_PRODUCTION"):
+    if order.ozon_status == "cancelled" or order.internal_status not in ("NEW", "QUEUED", "SENT_TO_PRODUCTION"):
         raise HTTPException(409, "Order cannot be claimed")
     if db.scalar(select(Assignment.id).where(Assignment.order_id == order_id)) is not None:
         raise HTTPException(409, "Order already assigned")

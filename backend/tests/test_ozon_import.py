@@ -129,8 +129,9 @@ def test_update_preserves_all_production_data(app, page):
         assert order.assignment.user_id == uid
         assert len(order.items) == 1 and order.items[0].price == Decimal("13000.1500")
         assert order.shipment_deadline.hour == 12
-        for model in (Order, Assignment, Blocker, Comment, ManagerTask, OrderTimelineEvent, StatusHistory):
+        for model in (Order, Assignment, Blocker, Comment, ManagerTask, StatusHistory):
             assert db.query(model).count() == 1
+        assert db.query(OrderTimelineEvent).count() == 2
 
 
 def test_unknown_fields_and_incomplete_optional_data(app, page):
