@@ -1,5 +1,64 @@
 # Architecture Decisions
 
+## 022 — Verified Ozon push contract and durable inbox
+
+Official [push notifications](https://docs.ozon.ru/api/seller/#tag/push_types),
+[connection and TYPE_PING](https://docs.ozon.ru/api/seller/#tag/push_start), and
+[redelivery](https://docs.ozon.ru/api/seller/#tag/push_resending) were read in the
+official browser documentation on 2026-10-01, before implementation. Supported
+FBS/rFBS events: `TYPE_NEW_POSTING`, `TYPE_STATE_CHANGED`, `TYPE_POSTING_CANCELLED`,
+`TYPE_CUTOFF_DATE_CHANGED`, `TYPE_DELIVERY_DATE_CHANGED`. FBO/order/product/chat
+types are outside this FBS task and are recorded as ignored. Ordinary successful
+receipt, including duplicates, returns HTTP 200 and `{"result":true}`. TYPE_PING
+returns HTTP 200 with `version`, `name`, and processing-start UTC `time`. Errors
+use the documented `error.code/message/details` envelope. The documentation
+defines no signature/header secret verification; none is invented.
+
+Ozon publishes source networks `195.34.21.0/24`, `185.73.192.0/22`,
+`91.223.93.0/24`. Caddy restricts the public receiver to these networks and
+overwrites `X-Ozon-Source-IP` from its actual remote socket. The backend accepts
+that header only from explicitly configured trusted proxy peers and additionally
+checks `seller_id` against the configured Client ID. Direct requests must come
+from the Ozon networks. Mock mode accepts only local/test clients; the receiver
+is disabled by default. This is IP-based ingress control, not cryptographic
+authentication. Do not put an unconfigured CDN/proxy in front of Caddy.
+
+`POST /api/ozon/webhook` commits a bounded, validated private inbox entry before
+acknowledging receipt. Unique SHA-256 of canonical JSON provides FBS idempotency
+(FBS payloads have no documented event UUID); JSON whitespace/key order does not
+affect identity. Duplicate reception does not reset processing/retry state. A
+single lifespan worker consumes pending rows, resumes on restart, and atomically
+commits the existing posting upsert, notifications/tasks and completion marker.
+PostgreSQL row locks/skip-locked and existing source/recipient unique keys guard
+replay. No in-memory-only background task, broker or periodic order reconciliation.
+
+The existing OzonClient fetches the current posting with the documented, current
+`POST /v3/posting/fbs/get` (the deprecated v3 *list* does not imply deprecated
+*get*). Adapt its product `price` string plus `currency_code` to task 021's shared
+mapper; retain original source JSON/tariff data. Fetch current data for every
+actionable event so delayed pushes do not restore stale statuses/dates, and avoid
+guessing the ambiguous push-to-Seller status mapping. Empty date intervals and
+cutoff events after Ozon assembly are ignored as documented. Delivery intervals
+come from the current get response's analytics data. Internal production fields
+remain independent. Full external cancellation after production start uses the
+existing `OZON_CANCELLED_AFTER_START` task rule; partial cancellations use current
+products/status without incorrectly cancelling the entire production order.
+
+Priority/Tariff/Money at Risk remain read-time projections over existing inputs;
+refresh them and the shared deadline Notification Engine on changed data, then
+publish SSE only after commit. External cancelled postings leave future shipment
+risk/deadline notifications even while their production status awaits a manager.
+No unverified conversion of raw Ozon tariff amounts to a signed normalized cost
+timeline is added; task 021's conservative unknown-money behavior remains.
+
+Worker failures store only safe error codes, create deduplicated existing manager
+tasks/in-app alerts, and retry five times with local backoff; success closes the
+error task. This local policy is separate from Ozon's redelivery policy. Exhausted
+events stay diagnosable; authenticated `settings.manage` plus CSRF can requeue via
+`POST /api/ozon/webhook/events/{id}/retry`. The receiver contains no Seller API
+calls and targets the documented 1500 ms availability threshold. See
+[operational contract](OZON_API.md#pushwebhook--task-022).
+
 ## 021 — Read-only FBS v4 import and production isolation
 
 Official [FBS list](https://docs.ozon.ru/api/seller/#operation/PostingFbsList) checked

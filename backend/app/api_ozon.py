@@ -2,13 +2,28 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import AwareDatetime, BaseModel, ValidationError, model_validator
+from sqlalchemy import select
 
 from app.auth import Db, require
-from app.models import User
+from app.models import AuditLog, OzonWebhookEvent, User, utc_now
 from app.ozon import OzonError
 from app.ozon_import import import_fbs, validate_window
 
 router = APIRouter(prefix="/api/ozon")
+
+
+@router.post("/webhook/events/{event_id}/retry")
+def retry_webhook(event_id: int, db: Db,
+                  actor: Annotated[User, Depends(require("settings.manage"))]) -> dict:
+    event = db.scalar(select(OzonWebhookEvent).where(
+        OzonWebhookEvent.id == event_id).with_for_update())
+    if event is None:
+        raise HTTPException(404, "Webhook event not found")
+    if event.status in ("FAILED", "RETRY"):
+        event.status, event.attempts, event.next_attempt_at = "PENDING", 0, utc_now()
+        db.add(AuditLog(actor_user_id=actor.id, action="ozon.webhook.retry", detail=f"event:{event.id}"))
+        db.commit()
+    return {"status": event.status}
 
 
 class ImportWindow(BaseModel):

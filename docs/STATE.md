@@ -26,29 +26,30 @@ Last updated: 2026-10-01
 - Task 020: backend Seller API client/interface and offline adapter, explicit API-key connection check, bounded HTTP retries/backoff/rate-limit cooldown, typed safe errors and structured metadata logs; official contracts recorded in `OZON_API.md`.
 
 - Task 021: explicit admin FBS v4 import via the existing client, cursor pagination, Decimal product prices, unique posting upserts, isolated production data, separate raw/tariff diagnostics, fixtures and transactional rollback tests.
+- Task 022: verified Ozon FBS/rFBS push endpoint and TYPE_PING handshake, durable event inbox, idempotency, restart-safe processing/retries, shared get/upsert, cancellation manager tasks, existing notifications/projections and post-commit SSE.
 
 ## Current
 
-- Task 021 complete. Apply migration `0016_ozon_fbs_import`. Explicit import: `POST /api/ozon/fbs/import`, session/CSRF and `settings.manage` required. No automatic Ozon requests.
+- Task 022 complete. Apply migration `0017_ozon_webhook` before setting `OZON_WEBHOOK_ENABLED=true`. Endpoint: `POST /api/ozon/webhook`; behind Caddy configure its trusted proxy peer. Failed-event retry requires `settings.manage`/CSRF. No periodic order sync.
 
 ## Next
 
-- Task 022 (Ozon webhook) has not started; periodic reconciliation remains task 023.
+- Task 023: periodic reconciliation; not started.
 
 ## Known Issues
 
-- Docker is unavailable in this environment, so PostgreSQL/Compose checks could not be run for tasks 013–021.
+- Docker/Caddy executables are unavailable here; PostgreSQL/Compose and Caddy runtime checks could not be run for task 022. Real Ozon connection/delivery remains an HTTPS deployment check.
 - Starlette emits a dependency deprecation warning about its TestClient/httpx integration; tests pass.
 - Web Push UI smoke passed on mock data; actual OS push reception awaits deployment with VAPID/HTTPS. The earlier two-browser SSE scenario still awaits a running deployment.
 - Real account import remains a deployment check. All automated import validation uses synthetic fixtures/mock HTTP; no live Ozon calls were made.
 - Confirmed v4 tariff source data is stored separately. Mapping end deadlines and unsigned discounts to the signed normalized tariff timeline remains pending; Money at Risk does not infer amounts from prices/rates.
 - Photo upload infrastructure is not yet available; blocker responses reserve a `photos` field.
 - Rules for sources beyond blockers and overdue procurement have a deduplicating rule boundary but await their source data and integrations.
-- NEW_ORDER, OZON_SYNC_ERROR and API_KEY_EXPIRING have emission boundaries; task 021 adds audited explicit import only. Automated integration alerts remain future integration work.
+- Task 022 emits NEW_ORDER, ORDER_CANCELLED and processing-error alerts through the existing engine. API_KEY_EXPIRING remains a future integration rule.
 
 ## Ozon Integration
 
-- Existing real client supports `/v1/roles` and current `/v4/posting/fbs/list`; official v4 contract rechecked in the browser on 2026-10-01. Mock Mode remains default; imports can run offline using v4 fixtures. No live account requests were performed. See `OZON_API.md`.
+- Existing real client supports `/v1/roles`, current `/v4/posting/fbs/list` and `/v3/posting/fbs/get`. Push payloads, handshake, responses, retries and source networks verified in official browser docs on 2026-10-01. Mock Mode remains default, webhook disabled by default; fixture/mock HTTP tests only. See `OZON_API.md`.
 
 ## Deployment
 
@@ -56,8 +57,8 @@ Last updated: 2026-10-01
 
 ## Last Tests
 
-- Backend: 126 pytest tests passed, including 22 FBS import tests and 42 client tests. Ruff passed (`cd backend; python -m ruff check --isolated app tests alembic`). Fixtures/mock HTTP only.
-- Import: primary/repeated/existing-production import, external updates, preservation of production relationships/history/override, multiple products, unknown/missing optional fields, exact raw JSON/Decimal, currency/range safety, no duplicates, cursors/retries, RBAC/CSRF and transaction rollback covered.
-- Database: SQLite Alembic upgrade/downgrade/upgrade through `0016_ozon_fbs_import` and new columns/table verified. Docker/PostgreSQL unavailable.
+- Backend: all 159 pytest tests passed; Ruff passed (`cd backend; .venv/Scripts/python.exe -m ruff check --isolated app tests alembic`). All Ozon coverage uses fixtures/mock HTTP.
+- Webhook: 33 added tests cover receipt/handshake, new/existing postings, status/cancellation/date changes, concurrent duplicates, notification/task deduplication, malformed/unknown payloads, source/seller checks, atomic rollback, retries/replay RBAC, restart recovery, response during slow API calls and risk refresh.
+- Database: SQLite Alembic upgrade/downgrade/upgrade through `0017_ozon_webhook`, inbox uniqueness and delivery columns verified. Docker/PostgreSQL unavailable.
 - Health: `/api/health` and `/api/health/ready` returned 200 in TestClient on SQLite.
-- Frontend: unchanged in task 021; previous lint/typecheck/PWA build passed. No new frontend checks required.
+- Frontend unchanged; no frontend checks required. Known Starlette/httpx and Alembic path-separator deprecation warnings only.

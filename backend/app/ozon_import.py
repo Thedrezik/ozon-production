@@ -69,6 +69,20 @@ class Warehouse(ExternalModel):
     warehouse: str | None = Field(default=None, max_length=240)
 
 
+class DeliveryInterval(ExternalModel):
+    delivery_date_begin: datetime | None = None
+    delivery_date_end: datetime | None = None
+
+    @field_validator("delivery_date_begin", "delivery_date_end")
+    @classmethod
+    def utc_dates(cls, value):
+        if value is not None:
+            if value.tzinfo is None:
+                raise ValueError("External dates require a timezone")
+            return value.astimezone(timezone.utc)
+        return None
+
+
 class Posting(ExternalModel):
     posting_number: str = Field(min_length=1, max_length=80)
     order_number: str | None = Field(default=None, max_length=80)
@@ -80,6 +94,7 @@ class Posting(ExternalModel):
     in_process_at: datetime | None = None
     delivering_date: datetime | None = None
     delivery_method: Warehouse | None = None
+    analytics_data: DeliveryInterval | None = None
     products: list[Product]
 
     @field_validator("shipment_date", "shipment_date_without_delay", "in_process_at", "delivering_date")
@@ -92,7 +107,8 @@ class Posting(ExternalModel):
         return None
 
 
-def upsert_posting(db: Session, raw: dict, *, is_mock: bool, actor_id: int) -> bool:
+def upsert_posting(db: Session, raw: dict, *, is_mock: bool, actor_id: int | None,
+                   source_raw: dict | None = None) -> bool:
     posting = Posting.model_validate(raw)
     # External columns only: production fields and relationships are never copied from payload.
     warehouse = posting.delivery_method
@@ -107,6 +123,9 @@ def upsert_posting(db: Session, raw: dict, *, is_mock: bool, actor_id: int) -> b
         "ozon_in_process_at": posting.in_process_at,
         "ozon_delivering_date": posting.delivering_date,
     }
+    if posting.analytics_data is not None:
+        fields["ozon_delivery_date_begin"] = posting.analytics_data.delivery_date_begin
+        fields["ozon_delivery_date_end"] = posting.analytics_data.delivery_date_end
     # The existing order_value is RUB-only. Missing prices/other currencies mean unknown.
     prices = [p.price for p in posting.products]
     total = sum((p.price.amount * p.quantity for p in posting.products if p.price), Decimal(0)).quantize(Decimal("0.01"))
@@ -123,7 +142,8 @@ def upsert_posting(db: Session, raw: dict, *, is_mock: bool, actor_id: int) -> b
     if order.is_mock != is_mock:
         raise ValueError("Cannot merge mock and real postings")
     snapshot = db.get(OzonPostingData, order.id)
-    raw_json = diagnostic_json(raw)
+    source = raw if source_raw is None else source_raw
+    raw_json = diagnostic_json(source)
     if snapshot is not None and snapshot.raw_json == raw_json:
         return False
     for name, value in fields.items():
@@ -138,7 +158,7 @@ def upsert_posting(db: Session, raw: dict, *, is_mock: bool, actor_id: int) -> b
     snapshot.raw_json = raw_json
     # JSON columns use decimal strings to avoid float conversion. Raw retains numeric types.
     for key in ("tariffication", "tariffication_steps"):
-        value = raw.get(key)
+        value = source.get(key)
         setattr(snapshot, key, json.loads(diagnostic_json(value), parse_float=str))
     snapshot.imported_at = utc_now()
     if created_id is not None:

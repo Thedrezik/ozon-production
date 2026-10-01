@@ -1,13 +1,27 @@
 {$DOMAIN} {
     encode gzip
 
-    handle /api/* {
-        reverse_proxy backend:8000
+    @ozonDenied {
+        path /api/ozon/webhook
+        not remote_ip 195.34.21.0/24 185.73.192.0/22 91.223.93.0/24
     }
+    # Preserve security-filter order ahead of the broader API path matcher.
+    route {
+        handle @ozonDenied {
+            header Content-Type application/json
+            respond `{"error":{"code":"ERROR_UNKNOWN","message":"Source is not allowed","details":null}}` 403
+        }
 
-    handle {
-        root * /srv
-        try_files {path} /index.html
-        file_server
+        handle /api/* {
+            reverse_proxy backend:8000 {
+                header_up X-Ozon-Source-IP {remote_host}
+            }
+        }
+
+        handle {
+            root * /srv
+            try_files {path} /index.html
+            file_server
+        }
     }
 }

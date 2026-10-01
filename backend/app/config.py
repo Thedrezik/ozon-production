@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     money_risk_near_hours: int = Field(default=2, ge=1, le=24)
     money_risk_cutoff_hours: str = "12,16"
     ozon_mock_mode: bool = True
+    ozon_webhook_enabled: bool = False
+    # Exact trusted reverse-proxy peers; never trust arbitrary forwarded headers.
+    ozon_webhook_trusted_proxies: str = ""
     upload_dir: str = "/data/uploads"
     backup_dir: str = "/data/backups"
     ozon_client_id: str = Field(default="", repr=False)

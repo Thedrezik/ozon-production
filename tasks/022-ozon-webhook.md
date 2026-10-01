@@ -1,6 +1,6 @@
 # Task 022 — Ozon Webhook
 
-status: pending  
+status: completed
 complexity: HIGH  
 recommended_model: GPT-6 Sol
 reasoning: Medium
@@ -50,13 +50,13 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Webhook endpoint проходит требования Ozon.
-- [ ] New posting event обрабатывается.
-- [ ] Duplicate event безопасен.
-- [ ] Cancellation/status changes обрабатываются.
-- [ ] Webhook event сохраняется для диагностики.
-- [ ] Tests idempotency проходят.
-- [ ] STATE.md обновлён.
+- [x] Webhook endpoint проходит требования Ozon.
+- [x] New posting event обрабатывается.
+- [x] Duplicate event безопасен.
+- [x] Cancellation/status changes обрабатываются.
+- [x] Webhook event сохраняется для диагностики.
+- [x] Tests idempotency проходят.
+- [x] STATE.md обновлён.
 
 ## Completion
 

@@ -132,3 +132,91 @@ to the same private database/backup boundary. No unbounded snapshot history is a
 Optional external fields can be absent/null; unknown fields and new statuses/substatuses
 are accepted within existing storage limits. Malformed core data aborts the import
 with a safe error without returning provider content.
+
+## Push/webhook — task 022
+
+Verified directly in the rendered official Seller API documentation on 2026-10-01:
+[connection](https://docs.ozon.ru/api/seller/#tag/push_start),
+[types and responses](https://docs.ozon.ru/api/seller/#tag/push_types),
+[redelivery](https://docs.ozon.ru/api/seller/#tag/push_resending).
+No account credentials or production API requests were used.
+
+Confirmed payload contracts (top-level JSON objects, without an invented wrapper):
+
+| Type | Data used/validated |
+| --- | --- |
+| `TYPE_PING` | `message_type`, UTC `time`; initial connection and periodic checks |
+| `TYPE_NEW_POSTING` | `posting_number`, `products` (`sku`, `offer_id`, `quantity`), `in_process_at`, `shipment_date`, `warehouse_id`, `seller_id`; Ozon also documents delivery/tracking/integration fields |
+| `TYPE_STATE_CHANGED` | `posting_number`, `new_state`, UTC `changed_state_date`, `warehouse_id`, `seller_id` |
+| `TYPE_POSTING_CANCELLED` | Same status fields, `old_state`, `products` (`sku`, `quantity`), `reason.id/message` |
+| `TYPE_CUTOFF_DATE_CHANGED` | `posting_number`, `new_cutoff_date`, `old_cutoff_date`, `warehouse_id`, `seller_id` |
+| `TYPE_DELIVERY_DATE_CHANGED` | `posting_number`, `new_delivery_date_begin/end`, `old_delivery_date_begin/end`, `warehouse_id`, `seller_id` |
+
+These five posting events concern FBS/rFBS. FBO, order-level and other types are
+stored as `IGNORED`, with a success acknowledgement and no production mutation.
+Unknown types are handled the same way. Unsupported types should not be subscribed.
+No signature verification or shared-secret header is specified by these sections.
+Source networks: `195.34.21.0/24`, `185.73.192.0/22`, `91.223.93.0/24`.
+
+Successful ordinary receipt: HTTP 200, application/json, `{"result":true}`.
+TYPE_PING: HTTP 200, `{"version":"1.0","name":"Ozon Production","time":"<UTC>"}`;
+time is when processing starts, rather than an echo of the request. Errors: 4xx/5xx
+with `{"error":{"code":"ERROR_UNKNOWN","message":"...","details":null}}`;
+invalid/missing values use documented `ERROR_PARAMETER_VALUE_MISSED`.
+`ERROR_REQUEST_DUPLICATED` is documented, but already received events here are
+acknowledged with success because the durable receipt already exists.
+
+Ozon retries failed deliveries after a few seconds with increasing intervals;
+after reaching ten minutes it makes five further attempts at ten-minute intervals.
+The page also lists suspension for unavailability, errors for 24 hours, fewer than
+half HTTP 200 responses, or processing over five seconds. Its current availability
+monitor considers under 1500 ms available, 1500–2500 ms unstable, and from 2500 ms
+unavailable; three consecutive unavailable days cause automatic disconnection.
+The receiver acknowledges after DB commit without waiting for Ozon HTTP enrichment.
+
+Cutoff-change events are documented as test-mode: verify via get; an empty new
+date means wait for a new interval, and events after assembly must be ignored.
+Delivery-change fields may likewise be empty. Late payment may leave
+`in_process_at` empty. Push status `posting_created` maps to several API statuses,
+so do not invent a one-to-one mapping.
+
+Current enrichment: `POST /v3/posting/fbs/get`, request `posting_number` and
+`with.analytics_data=true`, `with.financial_data=true`; response `result` is a
+single posting. The current get section has no deprecation notice. Product prices
+are strings plus `currency_code`, unlike v4 list money objects. Normalize only
+this verified difference for the existing upsert; raw get JSON stays original.
+Delivery interval uses `analytics_data.delivery_date_begin/end`, not
+`delivering_date` (which is the handover-to-delivery timestamp). The shared client
+retains bounded HTTP retries and no credential/body logging.
+
+Local operation:
+
+- Apply `0017_ozon_webhook` with `alembic upgrade head` before enabling the receiver.
+- Set `OZON_WEBHOOK_ENABLED=true`; real mode also needs existing Seller API credentials.
+- Behind Compose Caddy, set `OZON_WEBHOOK_TRUSTED_PROXIES` to its actual peer IP/CIDR,
+  preferably its exact `/32`, and update that setting if Docker changes the peer.
+  Only Caddy is publicly exposed; it overwrites the source header and filters IPs.
+  Untrusted forwarded headers cannot grant ingress. A CDN needs a separately
+  reviewed trusted-proxy configuration; the current config fails closed.
+- Register `https://<domain>/api/ozon/webhook` in Ozon Settings → Push notifications,
+  run Ozon's connection check, then subscribe to the five supported posting types.
+- In mock mode the backend accepts local requests only. Caddy's public Ozon IP
+  filter remains active. `MockOzonClient.get_fbs` uses the synthetic task 021 fixture.
+- Inbox stores canonical payload, receipt/processing times, mode, status, attempts,
+  next retry time and safe error code. Malformed bounded bodies are private rejected
+  diagnostics; denied/oversized requests are not retained. No public payload endpoint.
+- Unique canonical-payload hash prevents duplicate processing. Semantic redeliveries
+  with different content still fetch latest state; shared snapshot/upsert, notification
+  keys and manager-task source keys prevent repeated domain side effects.
+- Local retries: five total attempts, delays 10/20/40/80 seconds between failures.
+  `FAILED` rows stay stored; admin/CSRF replay is
+  `POST /api/ozon/webhook/events/{id}/retry`. Successful recovery resolves its error task.
+- One API worker owns the DB-inbox loop. It resumes pending/retry rows on restart;
+  it never periodically lists orders. Reconciliation remains task 023.
+- Priority, tariff projections and Money at Risk use existing engines. Raw source
+  tariffs are refreshed but their unverified signed-cost mapping remains unknown;
+  no ruble risk is inferred from product prices or unsigned discounts.
+
+Automated coverage uses synthetic payloads, fixtures and mock HTTP only. Real Ozon
+handshake/delivery, Caddy runtime and PostgreSQL checks remain deployment checks
+when Docker is unavailable locally.

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api-seller.ozon.ru"
 ROLES_PATH = "/v1/roles"
 FBS_LIST_PATH = "/v4/posting/fbs/list"
+FBS_GET_PATH = "/v3/posting/fbs/get"
 
 
 class OzonError(Exception):
@@ -79,6 +80,7 @@ class ConnectionInfo(BaseModel):
 
 @runtime_checkable
 class OzonClientInterface(Protocol):
+    def get_fbs(self, posting_number: str) -> dict: ...
     def list_fbs(self, since: datetime, to: datetime, *, cursor: str = "", limit: int = 100) -> dict: ...
     def check_connection(self) -> ConnectionInfo: ...
     def close(self) -> None: ...
@@ -96,6 +98,23 @@ class MockOzonClient:
 
     def close(self) -> None:
         pass
+
+    def get_fbs(self, posting_number: str) -> dict:
+        from datetime import timezone
+
+        from app.ozon_fixtures import mock_fbs_page
+
+        page = mock_fbs_page(datetime(2026, 10, 1, tzinfo=timezone.utc),
+                             datetime(2026, 10, 4, tzinfo=timezone.utc))
+        for posting in page["postings"]:
+            if posting["posting_number"] == posting_number:
+                for product in posting["products"]:
+                    price = product.pop("price", None)
+                    if price:
+                        product["price"] = price["amount"]
+                        product["currency_code"] = price["currency"]
+                return posting
+        raise OzonClientError(status_code=404)
 
 
 class OzonClient:
@@ -137,6 +156,19 @@ class OzonClient:
         # Verified read-only methods share the same HTTP pool and retry policy.
         with self._lock:
             return ConnectionInfo.model_validate(self._request(ROLES_PATH, {}))
+
+    def get_fbs(self, posting_number: str) -> dict:
+        if not isinstance(posting_number, str) or not 1 <= len(posting_number) <= 80:
+            raise ValueError("Invalid posting number")
+        with self._lock:
+            payload = self._request(FBS_GET_PATH, {
+                "posting_number": posting_number,
+                "with": {"analytics_data": True, "financial_data": True},
+            })
+        result = payload.get("result")
+        if not isinstance(result, dict) or result.get("posting_number") != posting_number:
+            raise OzonResponseError()
+        return result
 
     def list_fbs(self, since: datetime, to: datetime, *, cursor: str = "", limit: int = 100) -> dict:
         from app.ozon_import import validate_window
@@ -180,6 +212,9 @@ class OzonClient:
                         info = json.loads(response.text, parse_float=Decimal)
                         if path == ROLES_PATH:
                             ConnectionInfo.model_validate(info)
+                        elif path == FBS_GET_PATH:
+                            if not isinstance(info, dict) or not isinstance(info.get("result"), dict):
+                                raise ValueError("Invalid FBS posting")
                         elif not isinstance(info, dict) or not isinstance(info.get("postings"), list) or type(info.get("has_next")) is not bool:
                             raise ValueError("Invalid FBS page")
                     except (ValueError, ValidationError):

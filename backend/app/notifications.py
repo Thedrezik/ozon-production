@@ -102,7 +102,7 @@ def sync_deadline_notifications(db: Session, timezone_name: str) -> int:
     if not recipients:
         return 0
     orders = db.scalars(select(Order).where(Order.internal_status.not_in(
-        ("DONE", "CANCELLED", "HANDED_TO_SHIPPING")))).all()
+        ("DONE", "CANCELLED", "HANDED_TO_SHIPPING")), Order.ozon_status != "cancelled")).all()
     profiles, settings = production_profiles(db), priority_settings(db)
     count = 0
     for order in orders:

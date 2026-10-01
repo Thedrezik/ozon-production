@@ -21,6 +21,8 @@ from app.database import create_db_engine, database_is_ready
 from app.logging import configure_logging
 from app.order_events import OrderEvents
 from app.ozon import create_ozon_client
+from app.ozon_webhook import processing_loop as ozon_webhook_loop
+from app.ozon_webhook import router as ozon_webhook_router
 from app.telegram import configured as telegram_configured
 from app.telegram import delivery_loop as telegram_delivery_loop
 from app.telegram import router as telegram_router
@@ -37,6 +39,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         _app.state.ozon_client = create_ozon_client(config)
         stop = asyncio.Event()
         workers = []
+        if config.ozon_webhook_enabled:
+            workers.append(asyncio.create_task(ozon_webhook_loop(
+                engine, _app.state.ozon_client, config, _app.state.order_events, stop)))
         if configured(config):
             workers.append(asyncio.create_task(delivery_loop(engine, config, stop)))
         if telegram_configured(config):
@@ -58,6 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(orders_router)
     app.include_router(ozon_router)
+    app.include_router(ozon_webhook_router)
     app.include_router(product_profiles_router)
     app.include_router(blockers_router)
     app.include_router(manager_tasks_router)

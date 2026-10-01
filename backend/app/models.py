@@ -98,6 +98,8 @@ class Order(Base):
     warehouse_name: Mapped[str | None] = mapped_column(String(240))
     ozon_in_process_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ozon_delivering_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ozon_delivery_date_begin: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ozon_delivery_date_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ozon_status: Mapped[str] = mapped_column(String(40), nullable=False)
     internal_status: Mapped[str] = mapped_column(ForeignKey("internal_statuses.name"), nullable=False, index=True)
     shipment_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -406,3 +408,21 @@ class OzonPostingData(Base):
     tariffication: Mapped[dict | None] = mapped_column(JSON)
     tariffication_steps: Mapped[list[dict] | None] = mapped_column(JSON)
     imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class OzonWebhookEvent(Base):
+    """Durable inbox; private diagnostics, not part of order API responses."""
+    __tablename__ = "ozon_webhook_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_key: Mapped[str] = mapped_column(String(64), unique=True)
+    message_type: Mapped[str] = mapped_column(String(100))
+    posting_number: Mapped[str | None] = mapped_column(String(80))
+    payload_json: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    is_mock: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, default=utc_now)
+    error_code: Mapped[str | None] = mapped_column(String(80))

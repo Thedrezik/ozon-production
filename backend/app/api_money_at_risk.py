@@ -27,6 +27,7 @@ def _snapshot(db: Db, request: Request, as_of: datetime | None = None) -> dict:
         raise HTTPException(422, "Invalid snapshot time")
     orders = db.scalars(select(Order).options(selectinload(Order.items)).where(
         Order.internal_status.notin_(("DONE", "CANCELLED", "HANDED_TO_SHIPPING")),
+        Order.ozon_status != "cancelled",
         Order.tariff_steps.is_not(None))).all()
     profiles = production_profiles(db)
     settings = priority_settings(db)
