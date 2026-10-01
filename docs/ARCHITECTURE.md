@@ -15,7 +15,7 @@ The first deployment is one small Linux VPS (about 1 CPU and 1 GB RAM). Docker C
 - **Reconciliation:** a lightweight scheduled job → Ozon client → paginated comparison and transactional upserts. It recovers missed webhook events. A single-process scheduler is sufficient initially; deployment must ensure only one scheduler instance.
 - **Authentication and RBAC:** server-side sessions use opaque HttpOnly cookies, scrypt password hashes, a per-session CSRF token, and backend permission checks. Frontend visibility alone never grants access. The single API worker limits failed logins in memory. Audit events record access and user changes. A CLI creates the first super admin; admins create later users.
 - **Notifications:** future domain events create in-app notifications first; optional Web Push and Telegram delivery consume those events without becoming the primary workflow.
-- **Files:** future upload service stores compressed, validated images in a persistent local volume (`/data/uploads`), with metadata in PostgreSQL. A storage interface will permit changing the backend later.
+- **Files:** authenticated upload service stores compressed, validated images in a persistent local volume (`/data/uploads`), with metadata in PostgreSQL. A storage interface will permit changing the backend later.
 
 ## Operations
 

@@ -1,6 +1,6 @@
 # Task 026 — Files, Photos and QR
 
-status: pending  
+status: completed
 complexity: MEDIUM  
 recommended_model: GPT-6 Sol
 reasoning: Low
@@ -50,12 +50,12 @@ reasoning: Low
 
 ## Acceptance Criteria
 
-- [ ] Фото можно прикрепить к blocker.
-- [ ] Большой/неподдерживаемый файл отклоняется.
-- [ ] QR заказа генерируется.
-- [ ] Сканирование открывает нужный order.
-- [ ] Storage service абстрагирован.
-- [ ] STATE.md обновлён.
+- [x] Фото можно прикрепить к blocker.
+- [x] Большой/неподдерживаемый файл отклоняется.
+- [x] QR заказа генерируется.
+- [x] Сканирование открывает нужный order.
+- [x] Storage service абстрагирован.
+- [x] STATE.md обновлён.
 
 ## Completion
 
@@ -66,7 +66,7 @@ reasoning: Low
 3. Запустить frontend tests/lint/typecheck, если задача затрагивает frontend.
 4. Исправить обнаруженные ошибки.
 5. Обновить `/docs/STATE.md`.
-6. Изменить `status: pending` этого task на `status: completed`, если задача полностью закончена.
+6. Изменить `status: completed` этого task на `status: completed`, если задача полностью закончена.
 
 Финальный отчёт должен быть коротким:
 

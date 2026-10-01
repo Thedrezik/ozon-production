@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     ozon_stale_after_seconds: int = Field(default=600, ge=60, le=86400)
     # Exact trusted reverse-proxy peers; never trust arbitrary forwarded headers.
     ozon_webhook_trusted_proxies: str = ""
+    upload_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
     upload_dir: str = "/data/uploads"
     backup_dir: str = "/data/backups"
     ozon_credentials_master_key: str = Field(default="", repr=False)

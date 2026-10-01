@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.auth import Db, require
 from app.manager_tasks import ensure_task, resolve_source
@@ -47,7 +47,7 @@ def data(row: Blocker) -> dict:
         "assigned_to": row.assigned_to, "expected_resolution_at": row.expected_resolution_at,
         "created_at": row.created_at, "updated_at": row.updated_at, "resolved_at": row.resolved_at,
         "previous_production_status": row.previous_production_status,
-        "photos": [],
+        "photos": [{"id": photo.id, "url": f"/api/files/photos/{photo.id}"} for photo in row.photos],
     }
 
 
@@ -65,7 +65,7 @@ def list_blockers(db: Db, _actor: Annotated[User, Depends(require("orders.view")
         raise HTTPException(422, "Unknown blocker status")
     if not 1 <= limit <= 100 or offset < 0:
         raise HTTPException(422, "Invalid pagination")
-    query = select(Blocker).options(joinedload(Blocker.order))
+    query = select(Blocker).options(joinedload(Blocker.order), selectinload(Blocker.photos))
     if order_id is not None:
         query = query.where(Blocker.order_id == order_id)
     if status:
@@ -114,7 +114,7 @@ def create_blocker(payload: BlockerInput, db: Db, request: Request,
     db.add(AuditLog(actor_user_id=actor.id, action="blocker.created", detail=f"{order.posting_number} #{row.id}"))
     db.commit()
     request.app.state.order_events.publish(order.id)
-    return data(db.scalar(select(Blocker).options(joinedload(Blocker.order)).where(Blocker.id == row.id)))
+    return data(db.scalar(select(Blocker).options(joinedload(Blocker.order), selectinload(Blocker.photos)).where(Blocker.id == row.id)))
 
 
 @router.patch("/{blocker_id}")
@@ -157,4 +157,4 @@ def update_blocker(blocker_id: int, payload: BlockerUpdate, db: Db, request: Req
     db.add(AuditLog(actor_user_id=actor.id, action="blocker.updated", detail=f"{order.posting_number} #{row.id} {payload.status}"))
     db.commit()
     request.app.state.order_events.publish(order_id)
-    return data(db.scalar(select(Blocker).options(joinedload(Blocker.order)).where(Blocker.id == blocker_id)))
+    return data(db.scalar(select(Blocker).options(joinedload(Blocker.order), selectinload(Blocker.photos)).where(Blocker.id == blocker_id)))

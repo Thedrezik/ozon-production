@@ -33,22 +33,24 @@ Last updated: 2026-10-01
 
 - Task 025: encrypted authoritative credentials, real-client validation before rotation, admin integration status, UTC expiration settings, source-keyed alerts/critical tasks, safe audit and shared runtime refresh.
 
+- Task 026: local storage interface, bounded validated/compressed photos for orders/blockers/comments, authenticated galleries, audit/timeline, posting QR and PWA camera barcode lookup.
+
 ## Current
 
-- Task 025 complete. Migration head: `0019_ozon_credentials`. Configure backend `OZON_CREDENTIALS_MASTER_KEY` before saving credentials; encrypted DB configuration then supersedes environment bootstrap. No commit or push.
+- Task 026 complete. Migration head: `0020_photos`. Photos use the existing persistent uploads volume; apply migrations before starting the API. No commit or push.
 
 ## Next
 
-- Task 025 finished; no work started on task 026.
+- Task 026 finished; task 027 has not been started.
 
 ## Known Issues
 
-- Docker/Caddy executables are unavailable here; PostgreSQL/Compose and Caddy runtime checks could not be run for task 025. Real Ozon connection/delivery remains an HTTPS deployment check.
+- Docker/Caddy executables are unavailable here; PostgreSQL/Compose and Caddy runtime checks could not be run for task 026. Real Ozon connection/delivery remains an HTTPS deployment check.
 - Starlette emits a dependency deprecation warning about its TestClient/httpx integration; tests pass.
 - Web Push UI smoke passed on mock data; actual OS push reception awaits deployment with VAPID/HTTPS. The earlier two-browser SSE scenario still awaits a running deployment.
 - Real account import remains a deployment check. All automated import validation uses synthetic fixtures/mock HTTP; no live Ozon calls were made.
 - Confirmed v4 tariff source data is stored separately. Mapping end deadlines and unsigned discounts to the signed normalized tariff timeline remains pending; Money at Risk does not infer amounts from prices/rates.
-- Photo upload infrastructure is not yet available; blocker responses reserve a `photos` field.
+- Physical phone camera/HTTPS PWA validation remains a deployment check. Automated mobile UI and synthetic camera QR scanning passed. HEIC/HEIF is unsupported; upload JPEG, PNG or WebP.
 - Additional integration/manager automation rules await their source data and later tasks; reconciliation errors and cancellation-after-start already use source-keyed tasks.
 - Initial unknown postings older than the configured discovery window (30 days) require the existing historical importer. Outage discovery is capped at the verified 365-day API window; known nonterminal postings are checked independently. API_KEY_EXPIRING now uses the encrypted credential expiration configuration.
 
@@ -62,7 +64,7 @@ Last updated: 2026-10-01
 
 ## Last Tests
 
-- Backend full suite: 191 tests passed; final focused credential/migration checks: 11 passed (including the added UTC-offset case). Ruff passed for app/tests/Alembic. All Ozon tests use mock HTTP/fixtures; no production account requests.
-- New credential cases cover success, rejected candidate/environment/DB preservation, encryption, secret-free API/audit/validation errors, non-admin denial, threshold deduplication, critical task resolution, pending delivery retirement, runtime rotation/restart, wrong master and UTC expiration.
-- Frontend lint, typecheck and production build passed. Build required sandbox escalation for esbuild parent-directory reads. `git diff --check` passed.
-- TestClient health/readiness return 200; Alembic SQLite upgrade/downgrade/upgrade through head passed. Docker absent from PATH and standard Docker Desktop path; Compose/PostgreSQL runtime checks unavailable. Existing Starlette/httpx and Alembic deprecation warnings remain.
+- Backend full suite: 202 passed. Final focused files/orders/blockers/migration checks: 17 passed. New cases cover compression, type spoofing, size limit, filenames/traversal, blocker/comment binding, CSRF/RBAC, QR lookup, alternate storage and rollback cleanup; local storage survives reopening.
+- Ruff app/tests/Alembic, frontend lint/typecheck/production build and `git diff --check` passed. Build used sandbox escalation for esbuild directory reads.
+- Headless Edge at mobile viewport on an isolated mock DB: upload/gallery, actual QR decoding, exact order opening, camera-denied fallback and synthetic camera scan/track cleanup passed. `/api/health` and `/api/health/ready` returned 200.
+- SQLite Alembic upgrade/downgrade/upgrade through `0020_photos` passed. Compose already mounts `uploads:/data/uploads`; Docker is unavailable, so container/PostgreSQL/persistent-volume runtime checks remain unverified. Existing Starlette/httpx and Alembic deprecation warnings remain.

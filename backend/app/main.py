@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api_auth import router as auth_router
 from app.api_blockers import router as blockers_router
 from app.api_dashboard import router as dashboard_router
+from app.api_files import router as files_router
 from app.api_manager_tasks import router as manager_tasks_router
 from app.api_money_at_risk import router as money_at_risk_router
 from app.api_notifications import router as notifications_router
@@ -25,6 +26,7 @@ from app.ozon_credentials import ManagedOzonClient, expiration_loop
 from app.ozon_reconciliation import reconciliation_loop
 from app.ozon_webhook import processing_loop as ozon_webhook_loop
 from app.ozon_webhook import router as ozon_webhook_router
+from app.storage import LocalStorage
 from app.telegram import configured as telegram_configured
 from app.telegram import delivery_loop as telegram_delivery_loop
 from app.telegram import router as telegram_router
@@ -65,6 +67,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.secure_cookies = config.app_env == "production"
     app.state.order_events = OrderEvents()
     app.state.settings = config
+    app.state.storage = LocalStorage(config.upload_dir)
+    app.state.upload_slot = asyncio.Semaphore(1)
+    app.include_router(files_router)
     app.include_router(auth_router)
     app.include_router(orders_router)
     app.include_router(ozon_router)

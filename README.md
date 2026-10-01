@@ -61,3 +61,16 @@ Serve the PWA over HTTPS (localhost works for development), open Notifications, 
 One background loop in the existing API process consumes `WEB_PUSH` rows in `notification_deliveries` every 15 seconds. Delivery rechecks active users and current preferences, uses bounded retries and records per-device receipts. HTTP 404/410 removes a subscription. Successful receipt of a provider request is delivery acceptance, not proof the OS displayed it. The stable notification tag and receipts prevent ordinary replay/retry duplicates; a process crash after provider acceptance but before the database commit can still redeliver (Web Push has no transactional exactly-once guarantee). Use one API worker, as required by the existing SSE architecture. Telegram is still deferred.
 
 Worker event smoke: from `frontend`, run `node scripts/test-push-worker.mjs`.
+
+
+Task 026 photos and codes: apply migration `0020_photos`. `UPLOAD_DIR` defaults to
+`/data/uploads`, already mounted as the Compose `uploads` volume; include this volume
+alongside the database in backups. `UPLOAD_MAX_BYTES` defaults to 10485760 (10 MiB).
+Upload JPEG/PNG/WebP (not HEIC), up to 20 million pixels. Stored photos are JPEG at
+most 1600px, without originals/EXIF. Read access requires `orders.view`, upload also
+requires `comments.create` or `blockers.create`; comment photos are restricted to
+the author/admin. Photo deletion is unavailable. Orders display photo galleries
+and internal QR codes. Camera scan requires HTTPS (localhost is allowed for tests)
+and permission; raw barcode values must equal the stored posting number. Manual
+posting entry remains available. Storage writes are compensated on failed DB commits;
+process crashes may leave unreferenced files, so preserve the whole uploads volume.

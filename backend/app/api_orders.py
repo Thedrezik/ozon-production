@@ -432,6 +432,7 @@ def timeline(order_id: int, db: Db, _actor: Annotated[User, Depends(require("ord
     items = [
         {"id": f"comment-{row.id}", "kind": "comment", "body": row.body,
          "author": row.author.display_name if row.author else "Удалённый пользователь",
+         "author_user_id": row.author_user_id,
          "created_at": row.created_at, "mention_user_ids": [m.user_id for m in row.mentions]}
         for row in comments
     ] + [

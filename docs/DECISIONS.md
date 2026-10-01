@@ -223,3 +223,34 @@ external notices while preserving history. Expiration is manually configurable,
 never inferred from key creation time. Admin-only integration status reports
 reconciliation freshness, latest accepted data webhook, and sync/webhook errors
 over the last 24 hours. No live account calls occur in automated tests.
+
+
+## 026 — Private compressed photos and internal posting codes
+
+Use a small `Storage` protocol (`put/read/delete`) and a `LocalStorage` adapter;
+only opaque server-generated UUID keys are persisted. The existing Compose upload
+volume remains `/data/uploads`. Metadata, order/blocker/comment linkage and UTC
+creation time live in `photos`. S3-compatible storage can replace the adapter on
+application state without changing upload business logic. Physical files and DB
+commits cannot be atomic: compensate transaction failures by deleting the file;
+a process crash between writing and committing may leave an unreferenced file.
+No user-facing deletion is permitted in this task.
+
+Upload raw image bodies, avoiding multipart spooling of large originals. Enforce
+10 MiB by streamed byte count (`UPLOAD_MAX_BYTES` configurable), check declared
+JPEG/PNG/WebP against decoded format, cap at 20 million pixels, orient using EXIF,
+resize to 1600px and re-encode JPEG quality 80 without metadata. Serialize uploads
+per API process to bound decoding memory on the small VPS. Original filenames,
+EXIF/GPS and original phone files are never retained. Read/list/QR/lookup require
+`orders.view`; upload additionally requires `comments.create` or `blockers.create`.
+Comment photos require authorship or `comments.delete`. Check every target's order
+on the backend. Photo upload appends existing audit/timeline and publishes SSE.
+
+QR payload is `ozon-production:posting:<posting_number>`. The authenticated resolver
+matches that payload or a raw barcode posting number exactly in the database,
+including cancelled orders; arbitrary URLs are never followed. The PWA uses a
+lazy-loaded ZXing browser decoder for camera QR/barcodes, requests the rear camera
+only after an explicit action, stops tracks on scan/close/unmount, and offers manual
+entry on camera failure. It shows the resolved order through the existing exact-ID
+queue filter, clearing other filters and ignoring My Tasks ownership for that lookup.
+API/photo responses remain uncached by the PWA. Real phone camera use requires HTTPS.

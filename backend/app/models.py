@@ -258,6 +258,8 @@ class Blocker(Base):
     creator: Mapped[User | None] = relationship(foreign_keys=[creator_user_id])
     assignee: Mapped[User | None] = relationship(foreign_keys=[assigned_to])
 
+    photos: Mapped[list["Photo"]] = relationship()
+
 
 class ManagerTask(Base):
     __tablename__ = "manager_tasks"
@@ -448,3 +450,19 @@ class OzonCredentials(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class Photo(Base):
+    __tablename__ = "photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    blocker_id: Mapped[int | None] = mapped_column(ForeignKey("blockers.id"), index=True)
+    comment_id: Mapped[int | None] = mapped_column(ForeignKey("comments.id"), index=True)
+    uploader_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    storage_key: Mapped[str] = mapped_column(String(40), unique=True)
+    mime_type: Mapped[str] = mapped_column(String(40), default="image/jpeg")
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

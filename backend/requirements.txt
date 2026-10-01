@@ -7,3 +7,5 @@ pydantic-settings>=2.8,<3
 pywebpush>=2.0,<3
 httpx>=0.28,<1
 cryptography>=44,<51
+Pillow>=11,<13
+qrcode>=8,<9
