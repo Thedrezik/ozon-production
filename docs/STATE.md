@@ -22,24 +22,25 @@ Last updated: 2026-10-01
 - Task 016: shared SSE refresh for orders, blockers and manager tasks across active screens; reconnect, focus and periodic API reconciliation.
 - Task 017: transactional in-app notification center, per-user preferences, admin alerts, deduplication, deadline reconciliation, and Web Push/Telegram delivery queue.
 - Task 018: VAPID configuration/key generation, authenticated device subscriptions, Web Push adapter on the existing queue, retries/receipts, expired-subscription cleanup, PWA push and entity links, preferences and browser fallback.
+- Task 019: Telegram deep-link binding with hashed one-time codes and webhook secret, opt-in delivery through the existing notification queue, bounded retries, entity links, and unlink controls.
 
 ## Current
 
-- Task 018 complete. Apply migrations through `0014_web_push` before starting the updated API; configure VAPID and HTTPS for real-device delivery.
+- Task 019 complete. Apply migrations through `0015_telegram`; configure Telegram bot token, username, webhook secret and public app URL before enabling Telegram delivery.
 
 ## Next
 
-- Next task has not started.
+- Task 020 has not started.
 
 ## Known Issues
 
-- Docker is unavailable in this environment, so PostgreSQL/Compose checks could not be run for tasks 013–018.
+- Docker is unavailable in this environment, so PostgreSQL/Compose checks could not be run for tasks 013–019.
 - Web Push UI smoke passed on mock data; actual OS push reception awaits deployment with VAPID/HTTPS. The earlier two-browser SSE scenario still awaits a running deployment.
 - Ozon `order_number` and warehouse values are stored for filtering but upstream integration has not yet been added to populate those nullable columns.
 - Real Ozon tariff mapping remains pending official field/semantics verification during integration. No money at risk is inferred from order value or rates alone.
 - Photo upload infrastructure is not yet available; blocker responses reserve a `photos` field.
 - Rules for sources beyond blockers and overdue procurement have a deduplicating rule boundary but await their source data and integrations.
-- NEW_ORDER, OZON_SYNC_ERROR and API_KEY_EXPIRING have a notification emission boundary but await upstream Ozon integration. Telegram delivery adapter is deferred.
+- NEW_ORDER, OZON_SYNC_ERROR and API_KEY_EXPIRING have a notification emission boundary but await upstream Ozon integration; Telegram will deliver them once those events are emitted.
 
 ## Ozon Integration
 
@@ -51,7 +52,7 @@ Last updated: 2026-10-01
 
 ## Last Tests
 
-- Backend: 59 pytest tests passed; Ruff passed. Push transport encryption/VAPID, background delivery, ownership, preferences, retries and deduplication checked with mocked provider requests.
-- Database: SQLite Alembic upgrade/downgrade/upgrade through 0014 and metadata check passed. Docker/PostgreSQL unavailable.
-- Frontend: ESLint, TypeScript and production PWA build passed (`--configLoader runner`); push worker display/click/origin tests passed.
+- Backend: 62 pytest tests passed; Ruff passed. Telegram binding, existing queue fan-out, opt-out, API failure retry and duplicate suppression covered with mocked provider transport.
+- Database: SQLite Alembic upgrade/downgrade/upgrade through 0015 passed. Docker/PostgreSQL unavailable.
+- Frontend: ESLint, TypeScript and production PWA build passed (`--configLoader runner`); Telegram preferences and linking UI included.
 - UI: Chrome mock smoke passed for entity links, unsupported browser, explicit permission denial/grant, subscribe/test/unsubscribe; `/api/health` and `/api/health/ready` returned 200 on SQLite.

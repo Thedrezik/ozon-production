@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     vapid_public_key: str = ""
     vapid_private_key: str = Field(default="", repr=False)
     vapid_subject: str = ""
+    telegram_bot_token: str = Field(default="", repr=False)
+    telegram_bot_username: str = ""
+    telegram_webhook_secret: str = Field(default="", repr=False)
+    app_public_url: str = "http://localhost:5173"
 
     app_env: str = "development"
     app_secret: str = ""

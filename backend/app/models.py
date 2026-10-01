@@ -372,3 +372,19 @@ class PushReceipt(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     delivery_id: Mapped[int] = mapped_column(ForeignKey("notification_deliveries.id", ondelete="CASCADE"))
     subscription_id: Mapped[int] = mapped_column(ForeignKey("push_subscriptions.id", ondelete="CASCADE"), index=True)
+
+
+class TelegramAccount(Base):
+    __tablename__ = "telegram_accounts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
+    chat_id: Mapped[str] = mapped_column(String(40), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class TelegramLink(Base):
+    __tablename__ = "telegram_links"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

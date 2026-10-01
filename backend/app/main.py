@@ -19,6 +19,9 @@ from app.config import Settings, get_settings
 from app.database import create_db_engine, database_is_ready
 from app.logging import configure_logging
 from app.order_events import OrderEvents
+from app.telegram import configured as telegram_configured
+from app.telegram import delivery_loop as telegram_delivery_loop
+from app.telegram import router as telegram_router
 from app.web_push import configured, delivery_loop
 
 
@@ -30,13 +33,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         stop = asyncio.Event()
-        worker = asyncio.create_task(delivery_loop(engine, config, stop)) if configured(config) else None
+        workers = []
+        if configured(config):
+            workers.append(asyncio.create_task(delivery_loop(engine, config, stop)))
+        if telegram_configured(config):
+            workers.append(asyncio.create_task(telegram_delivery_loop(engine, config, stop)))
         try:
             yield
         finally:
-            if worker:
+            if workers:
                 stop.set()
-                await worker
+                await asyncio.gather(*workers)
             engine.dispose()
 
     app = FastAPI(title="Ozon Production API", lifespan=lifespan)
@@ -53,6 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(money_at_risk_router)
     app.include_router(notifications_router)
     app.include_router(push_router)
+    app.include_router(telegram_router)
     app.include_router(dashboard_router)
 
     @app.get("/api/health")

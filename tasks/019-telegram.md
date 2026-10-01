@@ -1,6 +1,6 @@
 # Task 019 — Telegram Notifications
 
-status: pending  
+status: completed
 complexity: LOW  
 recommended_model: GPT-6 Luna
 reasoning: Medium
@@ -48,11 +48,11 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Пользователь может привязать Telegram.
-- [ ] Manager получает blocker notification.
-- [ ] Ссылка открывает нужную страницу приложения.
-- [ ] Отключение Telegram preference работает.
-- [ ] STATE.md обновлён.
+- [x] Пользователь может безопасно привязать и отключить Telegram.
+- [x] Manager получает blocker notification через существующую очередь при включённом Telegram preference.
+- [x] Ссылка открывает соответствующую страницу приложения.
+- [x] Отключение Telegram preference подавляет отправку.
+- [x] STATE.md обновлён.
 
 ## Completion
 
