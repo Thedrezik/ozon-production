@@ -1,9 +1,12 @@
-"""Backend-only Seller API boundary. No order import or automatic API calls."""
+"""Backend-only Seller API boundary. Explicit read-only calls; no automatic API requests."""
 
+import json
 import logging
 import math
 import time
 from collections.abc import Callable
+from datetime import datetime
+from decimal import Decimal
 from threading import Lock
 from typing import Protocol, runtime_checkable
 
@@ -15,6 +18,7 @@ from app.config import Settings
 logger = logging.getLogger(__name__)
 BASE_URL = "https://api-seller.ozon.ru"
 ROLES_PATH = "/v1/roles"
+FBS_LIST_PATH = "/v4/posting/fbs/list"
 
 
 class OzonError(Exception):
@@ -75,15 +79,20 @@ class ConnectionInfo(BaseModel):
 
 @runtime_checkable
 class OzonClientInterface(Protocol):
+    def list_fbs(self, since: datetime, to: datetime, *, cursor: str = "", limit: int = 100) -> dict: ...
     def check_connection(self) -> ConnectionInfo: ...
     def close(self) -> None: ...
 
 
 class MockOzonClient:
-    """Offline adapter; existing seed_mock_orders remains the fixture source."""
+    """Offline adapter; uses synthetic v4 data and preserves the development seed."""
 
     def check_connection(self) -> ConnectionInfo:
         return ConnectionInfo(roles=[ApiRole(name="Mock", methods=[ROLES_PATH])])
+
+    def list_fbs(self, since: datetime, to: datetime, *, cursor: str = "", limit: int = 100) -> dict:
+        from app.ozon_fixtures import mock_fbs_page
+        return mock_fbs_page(since, to, cursor=cursor, limit=limit)
 
     def close(self) -> None:
         pass
@@ -125,11 +134,23 @@ class OzonClient:
 
     def check_connection(self) -> ConnectionInfo:
         """Read API-key roles. Success does not imply permission to import FBS."""
-        # Only this verified read-only POST is retryable. Do not expose arbitrary URLs.
+        # Verified read-only methods share the same HTTP pool and retry policy.
         with self._lock:
-            return self._check_connection()
+            return ConnectionInfo.model_validate(self._request(ROLES_PATH, {}))
 
-    def _check_connection(self) -> ConnectionInfo:
+    def list_fbs(self, since: datetime, to: datetime, *, cursor: str = "", limit: int = 100) -> dict:
+        from app.ozon_import import validate_window
+        validate_window(since, to)
+        if not 1 <= limit <= 100:
+            raise ValueError("FBS limit must be between 1 and 100")
+        with self._lock:
+            return self._request(FBS_LIST_PATH, {
+                "filter": {"since": since.isoformat(), "to": to.isoformat()},
+                "sort_dir": "ASC", "cursor": cursor, "limit": limit,
+                "with": {"analytics_data": True, "financial_data": True},
+            })
+
+    def _request(self, path: str, body: dict) -> dict:
         for attempt in range(1, self._retries + 2):
             wait = self._next_request - self._clock()
             if wait > 0:
@@ -140,7 +161,7 @@ class OzonClient:
             status = None
             info = None
             try:
-                response = self._http.post(ROLES_PATH, json={})
+                response = self._http.post(path, json=body)
                 status = response.status_code
                 if status == 429:
                     delay = self._retry_after(response.headers.get("Retry-After"))
@@ -156,7 +177,11 @@ class OzonClient:
                     error = OzonResponseError(status_code=status, attempts=attempt)
                 else:
                     try:
-                        info = ConnectionInfo.model_validate(response.json())
+                        info = json.loads(response.text, parse_float=Decimal)
+                        if path == ROLES_PATH:
+                            ConnectionInfo.model_validate(info)
+                        elif not isinstance(info, dict) or not isinstance(info.get("postings"), list) or type(info.get("has_next")) is not bool:
+                            raise ValueError("Invalid FBS page")
                     except (ValueError, ValidationError):
                         error = OzonResponseError(status_code=status, attempts=attempt)
             except httpx.TimeoutException:
@@ -165,7 +190,7 @@ class OzonClient:
                 error = OzonNetworkError(attempts=attempt)
 
             logger.info("ozon_request", extra={
-                "ozon_endpoint": ROLES_PATH, "ozon_attempt": attempt,
+                "ozon_endpoint": path, "ozon_attempt": attempt,
                 "ozon_status": status, "ozon_error": type(error).__name__ if error else None,
                 "ozon_duration_ms": round((self._clock() - started) * 1000),
             })

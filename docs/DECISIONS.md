@@ -1,5 +1,30 @@
 # Architecture Decisions
 
+## 021 — Read-only FBS v4 import and production isolation
+
+Official [FBS list](https://docs.ozon.ru/api/seller/#operation/PostingFbsList) checked
+in the browser on 2026-10-01: `POST /v4/posting/fbs/list`, cursor pagination, limit
+1–100, top-level `postings/has_next/cursor`, product `price.amount/currency`.
+V3 is deprecated (official shutdown date 2026-08-31). Confirmed source fields and
+operation details are recorded in [OZON_API.md](OZON_API.md#fbs-import--task-021).
+
+Extend task 020's client and shared retry implementation, never create another
+Ozon HTTP client. Import is an explicit admin action guarded by `settings.manage`
+and CSRF, with no startup calls, webhook or periodic worker. Unique posting-number
+insert plus PostgreSQL row locking serializes upserts; all pages form one transaction.
+Update only an external field allowlist and items. Internal status, assignments,
+blockers, comments, timeline, manager tasks, production timestamps and priority
+overrides are untouched, including first sync of an existing production order.
+Store one latest canonical raw posting in a separate diagnostic table, with exact
+Decimal numeric tokens and no public raw-data endpoint. Mock/real collisions fail.
+
+Keep Ozon tariff objects/steps separately from task 011's signed normalized timeline:
+`tariff_deadline_at` is not a verified start time, and a discount amount is not an
+explicitly signed cost. No inferred risk amount or tariff conversion is introduced.
+`shipment_date` populates the existing deadline as the upstream recommended time;
+it is not treated as an automatic cancellation deadline. Money is Decimal/NUMERIC,
+UTC timestamps remain separate from local production creation/stage times.
+
 ## 020 — Backend Seller API client boundary
 
 Use a lifespan-owned synchronous httpx client behind an `OzonClientInterface` and a settings-selected offline adapter. Preserve `seed_mock_orders`; real order import is task 021. Only the officially verified read-only `POST /v1/roles` is implemented for explicit connection checks, with bounded retries for 429/5xx/timeout/network errors and no retries for other 4xx or invalid responses. Honor numeric Retry-After without shortening it; a delay above the local retry cap returns a typed rate-limit error for later scheduling. Credentials never leave backend settings/HTTPS headers; redirects and environment proxies are disabled. Log only allowlisted request metadata, not provider bodies or raw exceptions. No public route, startup API call or database write is introduced.

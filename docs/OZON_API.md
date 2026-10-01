@@ -34,7 +34,7 @@ No seller account credentials were entered and no live Seller API request was ma
 or `OzonClient` otherwise. The application lifespan owns one client on
 `app.state.ozon_client`, closes its HTTP pool on shutdown and makes no startup
 requests. The existing `seed_mock_orders` fixtures and CLI remain unchanged.
-There is no new public API endpoint, frontend integration, scheduler or order importer.
+Task 021 adds the explicit, authenticated FBS importer described below; no scheduler or webhook is introduced.
 
 Connection checking explicitly invokes the read-only `/v1/roles` method. A valid
 response, including empty roles, confirms connectivity/authentication, not FBS
@@ -51,7 +51,7 @@ pool and spaces attempts by at least 25 ms. This pacing is per instance, not a
 distributed or account-wide limiter; other applications using the same Client ID
 share Ozon's quota.
 
-Only the verified read-only POST is retryable. Timeout, network errors, 5xx and 429
+Only the verified read-only roles and FBS list POST methods are retryable. Timeout, network errors, 5xx and 429
 can retry; other 4xx, authentication/permission errors, redirects and malformed
 successful responses fail immediately. The final domain error retains the failure
 category, status, attempt count and numeric retry delay. There is no arbitrary-URL
@@ -72,3 +72,63 @@ this boundary introduces no migration or business audit event.
 
 Tests inject `httpx.MockTransport` and a virtual clock; they make no live Ozon calls.
 Real account validation remains a deployment check with configured backend keys.
+
+## FBS import — task 021
+
+Rechecked the official documentation in the browser on 2026-10-01. The web reader
+still encountered a redirect loop; the browser loaded the official operation and
+its request/response examples. No account credentials or live API requests were used.
+
+- [POST /v4/posting/fbs/list](https://docs.ozon.ru/api/seller/#operation/PostingFbsList)
+  is current. The official v3 section marks `/v3/posting/fbs/list` deprecated with
+  shutdown on 2026-08-31. No v3 fallback is implemented.
+- Request: `filter.since`, `filter.to`, `limit` 1–100, `cursor`, `sort_dir` ASC/DESC,
+  `with.analytics_data`, `with.financial_data`. Date window must not exceed one year;
+  the importer conservatively limits it to 365 days and requires aware dates.
+- Response is top-level `postings`, `has_next`, `cursor`, without a `result` wrapper.
+  Follow returned cursors until `has_next=false`; missing/repeated cursors fail safely.
+- Posting: `posting_number`, `order_number`, `order_id`, `status`, `substatus`,
+  `in_process_at`, `shipment_date`, `shipment_date_without_delay`, `delivering_date`.
+  `shipment_date` is the recommended assembly/shipping time: it populates the existing
+  `shipment_deadline` field, and is not an inferred automatic cancellation date.
+  Internal `created_at` remains the local creation time; `in_process_at` has its own column.
+- Products: `name`, `sku`, `offer_id`, `quantity`, `price.amount`, `price.currency`.
+  V4 prices are money objects, unlike v3 price strings. Price uses Decimal/NUMERIC(18,4).
+  RUB-only order value is the sum of available unit prices times quantities, rounded
+  to cents. Missing price, empty items, mixed/non-RUB currency or an out-of-range total
+  leaves order value unknown; it never becomes an inferred loss.
+- Warehouse: `delivery_method.warehouse_id`, `delivery_method.warehouse`. Do not mix
+  these identifiers with analytics warehouse values or delivery method IDs.
+- Available tariff source: `tariffication` includes current/next money objects,
+  min charges, types, rates and `next_tariff_starts_at`; `tariffication_steps` includes
+  `min_charge`, `tariff_charge` money objects, `tariff_rate`, `tariff_type` and
+  `tariff_deadline_at`. Store these separately without claiming that an end deadline
+  is a start time or that unsigned discount amounts are signed production costs.
+  Mapping into task 011's normalized timeline remains unimplemented; Money at Risk
+  must not invent amounts from rates or order prices.
+
+`POST /api/ozon/fbs/import` accepts `{"since":"2026-10-01T00:00:00Z",
+"to":"2026-10-04T00:00:00Z"}`. It requires a session, CSRF token and backend
+`settings.manage` permission (ADMIN/SUPER_ADMIN). It uses the lifespan-owned
+OzonClient, shared HTTP pool/retries and read-only upstream method. Nothing runs
+on startup or periodically. Mock mode reads synthetic `app/fixtures/fbs_v4.json`
+using the same mapping; it filters the requested window and never calls Ozon.
+
+Migration `0016_ozon_fbs_import` adds nullable external columns, item money and
+`ozon_posting_data`. PostgreSQL uses `INSERT ... ON CONFLICT DO NOTHING RETURNING id`
+on the existing unique posting number, then a row lock and explicit external-field
+updates. SQLite uses the equivalent insert for offline tests. All pages commit in
+one transaction, or roll back together. Identical canonical payloads are no-ops;
+changed item lists are replaced while the order ID and all production relationships
+remain intact. Mock/real posting collisions are rejected. Audit entries contain
+only local order IDs; SSE invalidation is published after commit.
+
+`ozon_posting_data.raw_json` retains the latest full posting as canonical JSON,
+including unknown fields and exact Decimal number tokens, rather than original
+whitespace/key order. Tariff JSON columns use decimal strings where necessary;
+raw JSON retains their numeric types. Snapshots are backend diagnostics, absent
+from ordinary order responses and logs. They may contain customer data and belong
+to the same private database/backup boundary. No unbounded snapshot history is added.
+Optional external fields can be absent/null; unknown fields and new statuses/substatuses
+are accepted within existing storage limits. Malformed core data aborts the import
+with a safe error without returning provider content.

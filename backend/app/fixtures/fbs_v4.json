@@ -1,0 +1,102 @@
+{
+  "cursor": "",
+  "has_next": false,
+  "postings": [
+    {
+      "posting_number": "0210000001-0001-1",
+      "order_number": "0210000001-0001",
+      "order_id": 33301885134,
+      "status": "awaiting_packaging",
+      "substatus": "posting_created",
+      "in_process_at": "2026-10-01T08:00:00Z",
+      "shipment_date": "2026-10-02T12:00:00Z",
+      "shipment_date_without_delay": "2026-10-03T12:00:00Z",
+      "delivering_date": null,
+      "delivery_schema": "fbs",
+      "delivery_method": {
+        "id": 20605650762000,
+        "name": "Доставка Ozon самостоятельно",
+        "warehouse_id": 20605650762000,
+        "warehouse": "Мебель FBS",
+        "tpl_provider_id": 24,
+        "tpl_provider": "Доставка Ozon"
+      },
+      "products": [
+        {
+          "name": "Тумба прикроватная",
+          "sku": 1904686181,
+          "offer_id": "TUMBA-WHITE",
+          "quantity": 1,
+          "price": {
+            "amount": "12990.10",
+            "currency": "RUB"
+          }
+        },
+        {
+          "name": "Полка настенная",
+          "sku": 1904686182,
+          "offer_id": "SHELF-OAK",
+          "quantity": 2,
+          "price": {
+            "amount": "3490.25",
+            "currency": "RUB"
+          }
+        }
+      ],
+      "financial_data": {
+        "products": [
+          {
+            "product_id": 1904686181,
+            "price": 12990.1,
+            "quantity": 1,
+            "commission": {
+              "amount": 120,
+              "currency": "RUB",
+              "percent": 10
+            },
+            "customer_price": {
+              "amount": "12990.10",
+              "currency": "RUB"
+            }
+          }
+        ]
+      },
+      "tariffication": {
+        "current_tariff_charge": {
+          "amount": "100.00",
+          "currency": "RUB"
+        },
+        "current_tariff_type": "commission",
+        "current_tariff_rate": 2,
+        "next_tariff_charge": {
+          "amount": "150.00",
+          "currency": "RUB"
+        },
+        "next_tariff_type": "commission",
+        "next_tariff_rate": 2.5,
+        "next_tariff_starts_at": "2026-10-02T12:00:01Z"
+      },
+      "tariffication_steps": [
+        {
+          "tariff_type": "discount",
+          "tariff_rate": 2,
+          "tariff_charge": {
+            "amount": "24.00",
+            "currency": "RUB"
+          },
+          "min_charge": {
+            "amount": "24.00",
+            "currency": "RUB"
+          },
+          "tariff_deadline_at": "2026-10-02T12:00:00Z"
+        }
+      ],
+      "customer": null,
+      "cancellation": {
+        "cancel_reason_id": 0,
+        "cancel_reason": "",
+        "cancelled_after_ship": false
+      }
+    }
+  ]
+}

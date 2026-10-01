@@ -1,6 +1,6 @@
 # Task 021 — Ozon FBS Import
 
-status: pending  
+status: completed
 complexity: HIGH  
 recommended_model: GPT-6 Sol
 reasoning: Medium
@@ -49,13 +49,13 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Реальные postings импортируются.
-- [ ] Повторный импорт не создаёт duplicates.
-- [ ] Internal status не затирается Ozon sync.
-- [ ] Raw payload сохраняется.
-- [ ] Unknown fields не ломают parser.
-- [ ] Tests с fixtures проходят.
-- [ ] STATE.md обновлён.
+- [x] Реальные postings импортируются.
+- [x] Повторный импорт не создаёт duplicates.
+- [x] Internal status не затирается Ozon sync.
+- [x] Raw payload сохраняется.
+- [x] Unknown fields не ломают parser.
+- [x] Tests с fixtures проходят.
+- [x] STATE.md обновлён.
 
 ## Completion
 

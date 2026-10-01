@@ -93,6 +93,11 @@ class Order(Base):
     posting_number: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     order_number: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     warehouse_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    ozon_order_id: Mapped[str | None] = mapped_column(String(80), index=True)
+    ozon_substatus: Mapped[str | None] = mapped_column(String(80))
+    warehouse_name: Mapped[str | None] = mapped_column(String(240))
+    ozon_in_process_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ozon_delivering_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ozon_status: Mapped[str] = mapped_column(String(40), nullable=False)
     internal_status: Mapped[str] = mapped_column(ForeignKey("internal_statuses.name"), nullable=False, index=True)
     shipment_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -136,6 +141,8 @@ class OrderItem(Base):
     offer_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
     sku: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
+    currency: Mapped[str | None] = mapped_column(String(10))
     order: Mapped[Order] = relationship(back_populates="items")
 
 
@@ -388,3 +395,14 @@ class TelegramLink(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
     code_hash: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class OzonPostingData(Base):
+    """Latest external snapshot, never exposed in production order responses."""
+    __tablename__ = "ozon_posting_data"
+
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), primary_key=True)
+    raw_json: Mapped[str] = mapped_column(Text, nullable=False)
+    tariffication: Mapped[dict | None] = mapped_column(JSON)
+    tariffication_steps: Mapped[list[dict] | None] = mapped_column(JSON)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
