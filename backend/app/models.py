@@ -438,3 +438,13 @@ class OzonWebhookEvent(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, default=utc_now)
     error_code: Mapped[str | None] = mapped_column(String(80))
+
+
+class OzonCredentials(Base):
+    """Single real-account override; secrets encrypted together, never serialized."""
+    __tablename__ = "ozon_credentials"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    encrypted_credentials: Mapped[str] = mapped_column(Text)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

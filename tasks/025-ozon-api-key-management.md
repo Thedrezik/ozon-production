@@ -1,6 +1,6 @@
 # Task 025 — Ozon API Key Management
 
-status: pending  
+status: completed
 complexity: MEDIUM  
 recommended_model: GPT-6 Sol
 reasoning: Low
@@ -49,11 +49,11 @@ reasoning: Low
 
 ## Acceptance Criteria
 
-- [ ] Новый key можно проверить.
-- [ ] Неисправный key не заменяет рабочий.
-- [ ] Существующий key нельзя получить через API.
-- [ ] Expiration notification создаётся.
-- [ ] STATE.md обновлён.
+- [x] Новый key можно проверить.
+- [x] Неисправный key не заменяет рабочий.
+- [x] Существующий key нельзя получить через API.
+- [x] Expiration notification создаётся.
+- [x] STATE.md обновлён.
 
 ## Completion
 
@@ -64,7 +64,7 @@ reasoning: Low
 3. Запустить frontend tests/lint/typecheck, если задача затрагивает frontend.
 4. Исправить обнаруженные ошибки.
 5. Обновить `/docs/STATE.md`.
-6. Изменить `status: pending` этого task на `status: completed`, если задача полностью закончена.
+6. Изменить `status: completed` этого task на `status: completed`, если задача полностью закончена.
 
 Финальный отчёт должен быть коротким:
 

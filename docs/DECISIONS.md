@@ -190,3 +190,36 @@ inferred from shipment changes or raw unsigned Ozon discounts. Reconcile existin
 deadline notices: retain history, mark obsolete notices read and pending external
 deliveries SKIPPED, then emit current deadlines with existing stable keys. Publish
 SSE after commit via each existing caller. No migration or parallel subsystem.
+
+
+## 025 — One encrypted credential source and validated rotation
+
+Keep environment Client ID/API Key as bootstrap configuration only. A singleton
+`ozon_credentials` row becomes authoritative after the first verified rotation;
+Fernet encrypts Client ID and API Key together using backend-only
+`OZON_CREDENTIALS_MASTER_KEY`. Missing/incorrect master keys fail closed rather
+than falling back to obsolete environment credentials. Keep the master key
+separately from database backups; changing it requires decrypting/re-encrypting
+existing data. Apply migration `0019_ozon_credentials` before starting the API.
+
+The lifespan's managed client delegates to the existing OzonClient/mock adapter
+and refreshes its pool after committed configuration revisions. Import, push and
+reconciliation keep using this same client. A process lock serializes use and
+rotation, fitting the existing single-worker deployment. Rotation always checks
+the candidate through real OzonClient.check_connection (`/v1/roles`), including
+when production remains in Mock Mode; mock success cannot validate a real key.
+A roles check proves authentication/connectivity, not every FBS permission.
+Neither saved credential is returned, and errors/audit contain safe categories
+or configuration metadata only. Frontend uses uncontrolled password inputs,
+cleared after submission, without secret React state or browser storage.
+
+One hourly lifespan check emits existing API_KEY_EXPIRING notifications at
+configurable 14/7/3/1-day thresholds and at expiry. On startup/downtime recovery,
+only the nearest reached threshold is emitted. Revision/expiry/threshold keys
+provide existing per-user deduplication; external channels retain preferences.
+Within one day, create the existing critical source-keyed Manager Task. Rotation
+or expiration changes resolve the previous task and skip obsolete pending
+external notices while preserving history. Expiration is manually configurable,
+never inferred from key creation time. Admin-only integration status reports
+reconciliation freshness, latest accepted data webhook, and sync/webhook errors
+over the last 24 hours. No live account calls occur in automated tests.

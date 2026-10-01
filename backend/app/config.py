@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,12 +31,22 @@ class Settings(BaseSettings):
     ozon_webhook_trusted_proxies: str = ""
     upload_dir: str = "/data/uploads"
     backup_dir: str = "/data/backups"
+    ozon_credentials_master_key: str = Field(default="", repr=False)
+    ozon_key_alert_days: str = "14,7,3,1"
     ozon_client_id: str = Field(default="", repr=False)
     ozon_api_key: str = Field(default="", repr=False)
     ozon_timeout_seconds: float = Field(default=10, gt=0, le=60, allow_inf_nan=False)
     ozon_max_retries: int = Field(default=2, ge=0, le=5)
     ozon_retry_backoff_seconds: float = Field(default=1, gt=0, le=30, allow_inf_nan=False)
     ozon_retry_max_delay_seconds: float = Field(default=30, gt=0, le=120, allow_inf_nan=False)
+
+    @field_validator("ozon_key_alert_days")
+    @classmethod
+    def valid_alert_days(cls, value: str) -> str:
+        days = [int(part.strip()) for part in value.split(",")]
+        if not days or any(day < 1 or day > 365 for day in days):
+            raise ValueError("Ozon alert days must be between 1 and 365")
+        return ",".join(str(day) for day in sorted(set(days), reverse=True))
 
 
 @lru_cache

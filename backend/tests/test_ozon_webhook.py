@@ -401,7 +401,7 @@ def test_lifespan_worker_recovers_pending_inbox_and_does_not_delay_response(cont
         assert release.wait(5)
         return copy.deepcopy(c.raw)
     c.api.get_fbs.side_effect = slow_get
-    monkeypatch.setattr("app.main.create_ozon_client", lambda _: c.api)
+    monkeypatch.setattr("app.ozon_credentials.create_ozon_client", lambda _: c.api)
     with TestClient(c.app) as client:
         assert entered.wait(5)
         # HTTP receipt succeeds while the slow API call is still blocked.

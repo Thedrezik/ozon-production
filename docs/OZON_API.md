@@ -258,3 +258,15 @@ The task adds no new upstream contract. It reuses the official contracts verifie
 for tasks 021/022 on 2026-10-01 above. This session's web reader encountered the
 same redirect loop and browser access timed out; no new API fields were inferred.
 All automated verification uses fixtures/mock HTTP, never a production account.
+
+
+## Credential management — task 025
+
+The existing verified `/v1/roles` check is reused without a new Seller API method.
+The official web reader still returned a redirect loop on 2026-10-01; this task
+uses the existing verified client contract above. Runtime credentials now resolve
+from the encrypted authoritative singleton, with environment bootstrap only.
+Configure a Fernet `OZON_CREDENTIALS_MASTER_KEY` in backend environment before
+rotation; retain it securely outside database backups. `OZON_KEY_ALERT_DAYS`
+defaults to `14,7,3,1`. Saved credentials are never returned by integration APIs.
+See decision 025 for lifecycle, Mock Mode, alert and master-key recovery rules.

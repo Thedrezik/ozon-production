@@ -13,6 +13,7 @@ from app.api_money_at_risk import router as money_at_risk_router
 from app.api_notifications import router as notifications_router
 from app.api_orders import router as orders_router
 from app.api_ozon import router as ozon_router
+from app.api_ozon_credentials import router as credentials_router
 from app.api_procurement import router as procurement_router
 from app.api_product_profiles import router as product_profiles_router
 from app.api_push import router as push_router
@@ -20,7 +21,7 @@ from app.config import Settings, get_settings
 from app.database import create_db_engine, database_is_ready
 from app.logging import configure_logging
 from app.order_events import OrderEvents
-from app.ozon import create_ozon_client
+from app.ozon_credentials import ManagedOzonClient, expiration_loop
 from app.ozon_reconciliation import reconciliation_loop
 from app.ozon_webhook import processing_loop as ozon_webhook_loop
 from app.ozon_webhook import router as ozon_webhook_router
@@ -37,9 +38,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        _app.state.ozon_client = create_ozon_client(config)
+        _app.state.ozon_client = ManagedOzonClient(engine, config)
         stop = asyncio.Event()
-        workers = []
+        workers = [asyncio.create_task(expiration_loop(engine, config, stop))]
         if config.ozon_reconciliation_enabled:
             workers.append(asyncio.create_task(reconciliation_loop(
                 engine, _app.state.ozon_client, config, _app.state.order_events, stop)))
@@ -67,6 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(orders_router)
     app.include_router(ozon_router)
+    app.include_router(credentials_router)
     app.include_router(ozon_webhook_router)
     app.include_router(product_profiles_router)
     app.include_router(blockers_router)

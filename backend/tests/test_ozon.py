@@ -213,7 +213,7 @@ def test_factory_and_mock_compatibility(tmp_path):
     mock.close()
     app = setup_app(tmp_path)
     with TestClient(app) as http:
-        assert isinstance(app.state.ozon_client, MockOzonClient)
+        assert app.state.ozon_client.check_connection().roles[0].name == "Mock"
         assert http.get("/api/health").status_code == 200
         assert http.get("/api/health/ready").status_code == 200
         # Existing seeded mock production queue is untouched.
@@ -264,9 +264,9 @@ def test_invalid_credentials_are_safe_domain_errors(key):
 def test_lifespan_real_client_is_lazy_and_closes(tmp_path, monkeypatch):
     client, requests, _ = client_for([httpx.Response(200, json=SUCCESS)])
     app = setup_app(tmp_path)
-    monkeypatch.setattr("app.main.create_ozon_client", lambda _settings: client)
+    monkeypatch.setattr("app.ozon_credentials.create_ozon_client", lambda _settings: client)
     with TestClient(app):
-        assert app.state.ozon_client is client
+        assert app.state.ozon_client.client is None
         assert not requests
         app.state.ozon_client.check_connection()
     assert len(requests) == 1

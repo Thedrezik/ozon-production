@@ -22,7 +22,11 @@ def test_inbox_upgrade_downgrade_upgrade(tmp_path, monkeypatch):
         assert {tuple(c["column_names"]) for c in inspector.get_unique_constraints("ozon_webhook_events")} == {("event_key",)}
         assert {c["name"] for c in inspector.get_columns("orders")} >= {"ozon_delivery_date_begin", "ozon_delivery_date_end"}
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0018_ozon_reconciliation"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0019_ozon_credentials"
+        assert {c["name"] for c in inspector.get_columns("ozon_credentials")} >= {"encrypted_credentials", "revision", "expires_at", "checked_at"}
+        command.downgrade(config, "0018_ozon_reconciliation")
+        assert "ozon_credentials" not in inspect(engine).get_table_names()
+        command.upgrade(config, "head")
         columns = {c["name"] for c in inspector.get_columns("ozon_sync_state")}
         assert columns >= {"last_attempt_at", "last_successful_sync", "status", "error_code", "error_episode"}
         with engine.connect() as connection:

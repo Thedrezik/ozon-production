@@ -279,7 +279,7 @@ def test_lifespan_starts_worker_and_local_api_works_during_slow_ozon(app, page, 
         return page
 
     client = Mock(list_fbs=blocked_list)
-    monkeypatch.setattr("app.main.create_ozon_client", lambda _: client)
+    monkeypatch.setattr("app.ozon_credentials.create_ozon_client", lambda _: client)
     app.state.settings.ozon_reconciliation_enabled = True
     try:
         with TestClient(app) as local:
