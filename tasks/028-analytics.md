@@ -1,6 +1,6 @@
 # Task 028 — Production Analytics
 
-status: pending  
+status: completed
 complexity: MEDIUM  
 recommended_model: GPT-6 Sol
 reasoning: Low
@@ -51,12 +51,12 @@ reasoning: Low
 
 ## Acceptance Criteria
 
-- [ ] Основные показатели рассчитываются.
-- [ ] Период можно фильтровать.
-- [ ] SKU статистика работает.
-- [ ] Employee статистика не ломает permission model.
-- [ ] Запросы приемлемы для небольшого VPS.
-- [ ] STATE.md обновлён.
+- [x] Основные показатели рассчитываются.
+- [x] Период можно фильтровать.
+- [x] SKU статистика работает.
+- [x] Employee статистика не ломает permission model.
+- [x] Запросы приемлемы для небольшого VPS.
+- [x] STATE.md обновлён.
 
 ## Completion
 
@@ -67,7 +67,7 @@ reasoning: Low
 3. Запустить frontend tests/lint/typecheck, если задача затрагивает frontend.
 4. Исправить обнаруженные ошибки.
 5. Обновить `/docs/STATE.md`.
-6. Изменить `status: pending` этого task на `status: completed`, если задача полностью закончена.
+6. Изменить `status: completed` этого task на `status: completed`, если задача полностью закончена.
 
 Финальный отчёт должен быть коротким:
 

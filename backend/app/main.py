@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.api_analytics import router as analytics_router
 from app.api_auth import router as auth_router
 from app.api_blockers import router as blockers_router
 from app.api_dashboard import router as dashboard_router
@@ -84,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(push_router)
     app.include_router(telegram_router)
     app.include_router(dashboard_router)
+    app.include_router(analytics_router)
 
     @app.get("/api/health")
     def health() -> dict[str, str | bool]:

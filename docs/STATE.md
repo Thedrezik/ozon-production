@@ -37,17 +37,19 @@ Last updated: 2026-10-02
 
 - Task 027: short-lived tab-scoped read-only offline queue, cached-shell reload, explicit OFFLINE/stale/time display, session-checked reconnect/server refresh, conflict feedback and automated production-PWA browser checks.
 
+- Task 028: SQL production analytics, local-date period filter, stage/cycle averages, deadline-cohort overdue, blocker reasons, SKU/offer actual averages with existing normative profiles, actor-based employee throughput, current assignment workload, pagination and RBAC; migration `0021_analytics`.
+
 ## Current
 
-- Task 027 complete. Read-only offline strategy documented in DECISIONS.md. Migration head unchanged: `0020_photos`. No commit or push.
+- Task 028 complete. Analytics methodology documented in DECISIONS.md. Migration head: `0021_analytics`. No commit or push.
 
 ## Next
 
-- Task 027 finished; task 028 has not been started.
+- Task 028 finished; task 029 has not been started.
 
 ## Known Issues
 
-- Docker/Caddy executables are unavailable here; PostgreSQL/Compose and Caddy runtime checks could not be run for task 027. Real Ozon connection/delivery remains an HTTPS deployment check.
+- Docker/Caddy executables are unavailable here; PostgreSQL/Compose and Caddy runtime checks could not be run for task 028. Real Ozon connection/delivery remains an HTTPS deployment check.
 - Starlette emits a dependency deprecation warning about its TestClient/httpx integration; tests pass.
 - Web Push UI smoke passed on mock data; actual OS push reception awaits deployment with VAPID/HTTPS. The earlier two-browser SSE scenario still awaits a running deployment.
 - Real account import remains a deployment check. All automated import validation uses synthetic fixtures/mock HTTP; no live Ozon calls were made.
@@ -68,7 +70,7 @@ Last updated: 2026-10-02
 
 ## Last Tests
 
-- Backend full suite: 202 passed, including auth/RBAC, status conflicts and health/readiness. Ruff app/tests/Alembic passed (run from backend).
-- Frontend lint/typecheck/production build, offline snapshot unit checks, push-worker checks and git diff --check passed. Build required sandbox escalation for esbuild directory reads.
-- Headless Edge with the actual production build/generated service worker and synthetic local mock API: offline reload/shell/cached queue, OFFLINE + unchanged timestamp/stale warning, reconnect + fresh backend data, no deferred writes, live 409 refresh/message, backend outage while browser stays online, auth revocation/cleanup, offline deletion and no API cache all passed.
-- Docker executable is unavailable: Compose build/up, container Alembic, ps and container health/readiness were not run. No backend/migration change in task 027. Existing Starlette/httpx and Alembic dependency deprecation warnings remain.
+- Task 028: backend full suite: 206 passed; focused analytics: 4 passed. Ruff app/tests/Alembic passed (run from backend). Existing Starlette/httpx and Alembic deprecation warnings remain.
+- Frontend lint/typecheck/production build and mobile headless Edge analytics mock UI passed: metrics, period change, pagination, empty state and finance permission visibility. git diff --check passed.
+- Alembic upgrade/downgrade/upgrade and analytics indexes verified on SQLite; PostgreSQL SQL generation for 0020_photos → 0021_analytics and downgrade passed. Full-history offline SQL generation is unsupported by the existing RBAC data-seeding migration; not changed here.
+- Docker executable unavailable: Compose build/up, container migration/ps, container health/readiness and actual PostgreSQL queries were not run. Backend health/readiness are covered by passing tests. Apply migration before deployment.

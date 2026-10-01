@@ -1,5 +1,38 @@
 # Architecture Decisions
 
+## 028 — Production analytics from operational tables
+
+Read-only SQL aggregates use existing first-stage timestamps; NEW starts at local
+order creation and cycle ends at first READY_TO_SHIP (not Ozon delivery/DONE).
+Each interval belongs to the local date of its end; include both dates using UTC
+half-open bounds in organization timezone, maximum 366 days. Missing/reversed
+intervals are excluded, waiting/blocker time remains included. No event store,
+background aggregation, financial snapshot or new database. Existing priority and
+Money at Risk projections remain operational, not evidence of prevented loss.
+
+Throughput counts first received/started/produced/ready timestamps in the period.
+Overdue uses shipment-deadline cohort: deadline before min(now, period end), no
+readiness or readiness after deadline, excluding internal/external cancellations.
+Historical deadline/cancellation values are not reconstructed from current data.
+Blockers group by creation date and reason; open count reflects current state.
+Current assignment workload is explicitly a live snapshot, not historical load.
+
+Employee throughput counts distinct orders per actual status-history actor for
+PRODUCED/READY_TO_SHIP in the period; repeated transitions count once per employee.
+No retroactive attribution to current assignees and no invented actor for legacy
+rows. Analytics permission grants these operational names/counts only, no account
+or audit data. SKU/offer pairs count each posting once: elapsed production of the
+whole posting, not per-item labor. Existing offer-first/SKU-fallback profile shows
+unit normative separately; no substitution for missing actual durations.
+
+Require analytics.view server-side; finance.view additionally exposes only an
+unavailable explanation (amount null) for prevented financial risk. Confirmed
+counterfactual loss/avoidance methodology is unavailable, so never sum projected
+Money at Risk as savings. Reads do not mutate audit/workflow. Grouped SKU, employee
+and live workload results are paginated (20, max 100); date cohort indexes in
+0021_analytics support bounded queries on the single PostgreSQL instance.
+
+
 ## 027 — Short-lived read-only offline queue
 
 Keep the existing generated Workbox worker: precache the static application shell
