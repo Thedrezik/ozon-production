@@ -50,3 +50,14 @@ npm run build
 On Windows use `.venv\Scripts\python`, `.venv\Scripts\uvicorn`, `.venv\Scripts\pytest`, and `.venv\Scripts\ruff` instead of `./.venv/bin/...`. Migration `0003_mock_orders` adds orders, items, status history and assignments. Set `APP_ENV=production` when serving over HTTPS so session cookies have the Secure flag. For local HTTP use `APP_ENV=development`. Use `npm run build -- --configLoader runner` on Windows if Vite's default config loader cannot access the project path.
 
 Architecture and operational boundaries are described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). No real Ozon credentials are needed or used by this bootstrap.
+
+
+### Web Push (task 018)
+
+From `backend`, run `.venv\Scripts\python -m app.push_keys` (Linux: `.venv/bin/python -m app.push_keys`). This creates an ignored `.env.vapid` without displaying secrets or overwriting an existing key pair. Copy its three settings into the deployment's untracked `.env`, replace `VAPID_SUBJECT` with your contact `mailto:` address, and keep the private key backend-only. Retain the same key pair across deployments; rotating it requires browsers to unsubscribe and subscribe again. Apply migration `0014_web_push` before starting the API. Blank configuration disables the adapter without affecting in-app notifications.
+
+Serve the PWA over HTTPS (localhost works for development), open Notifications, select **Включить Web Push**, then choose the event types in preferences. Enable `NEW_ORDER` to use **Тестовое уведомление**. Permission is requested only by the enable button. On iPhone, open the installed PWA. Unsupported browsers retain the in-app notification center. Subscription is per device and account; disconnect it before changing accounts on a shared device. The API accepts only HTTPS endpoints from FCM, Mozilla, Apple and Windows push services to prevent arbitrary outbound requests.
+
+One background loop in the existing API process consumes `WEB_PUSH` rows in `notification_deliveries` every 15 seconds. Delivery rechecks active users and current preferences, uses bounded retries and records per-device receipts. HTTP 404/410 removes a subscription. Successful receipt of a provider request is delivery acceptance, not proof the OS displayed it. The stable notification tag and receipts prevent ordinary replay/retry duplicates; a process crash after provider acceptance but before the database commit can still redeliver (Web Push has no transactional exactly-once guarantee). Use one API worker, as required by the existing SSE architecture. Telegram is still deferred.
+
+Worker event smoke: from `frontend`, run `node scripts/test-push-worker.mjs`.

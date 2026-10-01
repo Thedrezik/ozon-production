@@ -101,12 +101,12 @@ def create_blocker(payload: BlockerInput, db: Db, request: Request,
                   previous_production_status=previous)
     db.add(row)
     db.flush()
-    ensure_task(db, source_type="BLOCKER", source_id=row.id, order_id=order.id,
+    task = ensure_task(db, source_type="BLOCKER", source_id=row.id, order_id=order.id,
                 title=f"Проблема заказа {order.posting_number}", description=description,
                 severity=payload.severity, due_at=payload.expected_resolution_at)
     emit(db, type="BLOCKER_CREATED", event_key=f"blocker:{row.id}",
          user_ids=manager_ids(db), title=f"Проблема заказа {order.posting_number}",
-         body=description, url=f"/orders/{order.id}")
+         body=description, url=f"/manager-tasks/{task.id}")
     if previous:
         transition(db, order, "BLOCKED", actor.id)
     db.add(OrderTimelineEvent(order_id=order.id, event_type="blocker_created",

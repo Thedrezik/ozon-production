@@ -47,7 +47,8 @@ export function ManagerTasks({ current, initialStatus = 'OPEN', refreshToken = 0
     if (severity) params.set('severity', severity)
     if (source) params.set('source_type', source)
     if (assignee) params.set('assigned_to', assignee)
-    if (status) params.set('status', status)
+    if (status.startsWith('task_id:')) params.set('task_id', status.split(':')[1])
+    else if (status) params.set('status', status)
     request<{ items: Task[]; total: number }>(`/manager-tasks?${params}`).then(result => {
       setItems(result.items); setTotal(result.total); setNotice('')
     }).catch(() => setNotice('Не удалось загрузить задачи'))
@@ -62,7 +63,8 @@ export function ManagerTasks({ current, initialStatus = 'OPEN', refreshToken = 0
       if (severity) params.set('severity', severity)
       if (source) params.set('source_type', source)
       if (assignee) params.set('assigned_to', assignee)
-      if (status) params.set('status', status)
+      if (status.startsWith('task_id:')) params.set('task_id', status.split(':')[1])
+    else if (status) params.set('status', status)
       const result = await request<{ items: Task[]; total: number }>(`/manager-tasks?${params}`)
       setItems(result.items); setTotal(result.total)
     } catch (cause) { setNotice(cause instanceof Error ? cause.message : 'Ошибка') }

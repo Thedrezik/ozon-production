@@ -188,7 +188,7 @@ def update_status(code: str, payload: StatusSettingsInput, db: Db, request: Requ
 @router.get("")
 def list_orders(
     db: Db, _actor: Annotated[User, Depends(require("orders.view"))],
-    status: str | None = None, assigned_user_id: int | None = None,
+    order_id: int | None = None, status: str | None = None, assigned_user_id: int | None = None,
     blocked: bool | None = None, ready: bool | None = None, overdue: bool | None = None,
     priority_level: str | None = None,
     q: str | None = None, ozon_status: str | None = None,
@@ -202,6 +202,8 @@ def list_orders(
     if not 1 <= limit <= 100 or offset < 0:
         raise HTTPException(422, "Invalid pagination")
     query = select(Order)
+    if order_id is not None:
+        query = query.where(Order.id == order_id)
     if status:
         query = query.where(Order.internal_status == status)
     if assigned_user_id is not None:

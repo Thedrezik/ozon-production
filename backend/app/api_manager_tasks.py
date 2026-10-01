@@ -27,7 +27,7 @@ def task_data(row: ManagerTask) -> dict:
 
 @router.get("")
 def list_tasks(db: Db, _actor: Annotated[User, Depends(require("manager_tasks.view"))],
-               severity: str | None = None, source_type: str | None = None,
+               task_id: int | None = None, severity: str | None = None, source_type: str | None = None,
                assigned_to: int | None = None, status: str | None = None,
                limit: int = 50, offset: int = 0) -> dict:
     if ((severity is not None and severity not in SEVERITIES)
@@ -38,6 +38,8 @@ def list_tasks(db: Db, _actor: Annotated[User, Depends(require("manager_tasks.vi
     sync_all_overdue(db)
     db.commit()
     query = select(ManagerTask)
+    if task_id is not None:
+        query = query.where(ManagerTask.id == task_id)
     if severity:
         query = query.where(ManagerTask.severity == severity)
     if source_type:

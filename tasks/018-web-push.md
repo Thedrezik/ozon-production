@@ -1,6 +1,6 @@
 # Task 018 — PWA Web Push
 
-status: pending  
+status: completed
 complexity: MEDIUM  
 recommended_model: GPT-6 Sol
 reasoning: Low
@@ -48,11 +48,11 @@ reasoning: Low
 
 ## Acceptance Criteria
 
-- [ ] Пользователь может включить push.
-- [ ] Тестовое уведомление приходит.
-- [ ] Blocker notification открывает связанную задачу.
-- [ ] Недействительная subscription корректно удаляется.
-- [ ] STATE.md обновлён.
+- [x] Пользователь может включить push.
+- [x] Тестовое уведомление приходит.
+- [x] Blocker notification открывает связанную задачу.
+- [x] Недействительная subscription корректно удаляется.
+- [x] STATE.md обновлён.
 
 ## Completion
 

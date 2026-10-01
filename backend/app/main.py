@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -13,10 +14,12 @@ from app.api_notifications import router as notifications_router
 from app.api_orders import router as orders_router
 from app.api_procurement import router as procurement_router
 from app.api_product_profiles import router as product_profiles_router
+from app.api_push import router as push_router
 from app.config import Settings, get_settings
 from app.database import create_db_engine, database_is_ready
 from app.logging import configure_logging
 from app.order_events import OrderEvents
+from app.web_push import configured, delivery_loop
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -26,9 +29,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        stop = asyncio.Event()
+        worker = asyncio.create_task(delivery_loop(engine, config, stop)) if configured(config) else None
         try:
             yield
         finally:
+            if worker:
+                stop.set()
+                await worker
             engine.dispose()
 
     app = FastAPI(title="Ozon Production API", lifespan=lifespan)
@@ -44,6 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(procurement_router)
     app.include_router(money_at_risk_router)
     app.include_router(notifications_router)
+    app.include_router(push_router)
     app.include_router(dashboard_router)
 
     @app.get("/api/health")

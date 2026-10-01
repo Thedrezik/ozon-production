@@ -101,6 +101,7 @@ export function Orders({ current, mine, initialFilter = '', refreshToken = 0 }: 
     if (product.trim()) params.set('product', product.trim())
     if (warehouse.trim()) params.set('warehouse', warehouse.trim())
     if (special.startsWith('assigned_user_id:')) params.set('assigned_user_id', special.split(':')[1])
+    else if (special.startsWith('order_id:')) params.set('order_id', special.split(':')[1])
     else if (special) params.set(special, special === 'priority_level' ? 'P0' : 'true')
     try { setPage(await request<Page>(`/orders?${params}`)); const result = await request<{ items: Blocker[] }>('/blockers?limit=100'); setBlockers(result.items); setError('') }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось загрузить очередь') }

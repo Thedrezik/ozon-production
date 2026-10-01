@@ -7,6 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    vapid_public_key: str = ""
+    vapid_private_key: str = Field(default="", repr=False)
+    vapid_subject: str = ""
+
     app_env: str = "development"
     app_secret: str = ""
     database_url: str = "postgresql+psycopg://ozon:ozon@localhost:5432/ozon"

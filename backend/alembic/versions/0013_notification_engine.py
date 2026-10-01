@@ -1,6 +1,7 @@
 """Notification center, preferences and channel delivery queue."""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0013_notification_engine"
