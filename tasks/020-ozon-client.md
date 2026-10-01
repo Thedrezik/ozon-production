@@ -1,6 +1,6 @@
 # Task 020 — Ozon Seller API Client
 
-status: pending  
+status: completed
 complexity: HIGH  
 recommended_model: GPT-6 Sol
 reasoning: Medium
@@ -52,13 +52,13 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Актуальные endpoints подтверждены официальной документацией.
-- [ ] Connection check работает.
-- [ ] Ошибки классифицируются.
-- [ ] Retry ограничен.
-- [ ] Mock и real client имеют совместимый interface.
-- [ ] Tests используют mock HTTP.
-- [ ] STATE.md обновлён.
+- [x] Актуальные endpoints подтверждены официальной документацией.
+- [x] Connection check работает.
+- [x] Ошибки классифицируются.
+- [x] Retry ограничен.
+- [x] Mock и real client имеют совместимый interface.
+- [x] Tests используют mock HTTP.
+- [x] STATE.md обновлён.
 
 ## Completion
 

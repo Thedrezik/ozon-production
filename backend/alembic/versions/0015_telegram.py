@@ -1,6 +1,7 @@
 """Telegram account links for notification delivery."""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0015_telegram"

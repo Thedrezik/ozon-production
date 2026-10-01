@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     backup_dir: str = "/data/backups"
     ozon_client_id: str = Field(default="", repr=False)
     ozon_api_key: str = Field(default="", repr=False)
+    ozon_timeout_seconds: float = Field(default=10, gt=0, le=60, allow_inf_nan=False)
+    ozon_max_retries: int = Field(default=2, ge=0, le=5)
+    ozon_retry_backoff_seconds: float = Field(default=1, gt=0, le=30, allow_inf_nan=False)
+    ozon_retry_max_delay_seconds: float = Field(default=30, gt=0, le=120, allow_inf_nan=False)
 
 
 @lru_cache

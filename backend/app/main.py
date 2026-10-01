@@ -19,6 +19,7 @@ from app.config import Settings, get_settings
 from app.database import create_db_engine, database_is_ready
 from app.logging import configure_logging
 from app.order_events import OrderEvents
+from app.ozon import create_ozon_client
 from app.telegram import configured as telegram_configured
 from app.telegram import delivery_loop as telegram_delivery_loop
 from app.telegram import router as telegram_router
@@ -32,6 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        _app.state.ozon_client = create_ozon_client(config)
         stop = asyncio.Event()
         workers = []
         if configured(config):
@@ -45,6 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 stop.set()
                 await asyncio.gather(*workers)
             engine.dispose()
+            _app.state.ozon_client.close()
 
     app = FastAPI(title="Ozon Production API", lifespan=lifespan)
     app.state.engine = engine

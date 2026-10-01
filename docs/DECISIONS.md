@@ -1,5 +1,11 @@
 # Architecture Decisions
 
+## 020 — Backend Seller API client boundary
+
+Use a lifespan-owned synchronous httpx client behind an `OzonClientInterface` and a settings-selected offline adapter. Preserve `seed_mock_orders`; real order import is task 021. Only the officially verified read-only `POST /v1/roles` is implemented for explicit connection checks, with bounded retries for 429/5xx/timeout/network errors and no retries for other 4xx or invalid responses. Honor numeric Retry-After without shortening it; a delay above the local retry cap returns a typed rate-limit error for later scheduling. Credentials never leave backend settings/HTTPS headers; redirects and environment proxies are disabled. Log only allowlisted request metadata, not provider bodies or raw exceptions. No public route, startup API call or database write is introduced.
+
+Official Ozon documentation was checked in the browser on 2026-10-01: `/v1/roles`, auth headers, host and rate-limit headers confirmed; `/v1/warehouse/list` is deprecated in favor of `/v2/warehouse/list`. See [verified contracts and operational constraints](OZON_API.md) for official links and local retry policy. No FBS endpoint or webhook contract is assumed by task 020.
+
 ## 001 — Single VPS bootstrap
 
 Use Docker Compose with one FastAPI worker, a small SQLAlchemy pool, PostgreSQL, and Caddy serving a static PWA. This fits the initial 1 CPU / 1 GB RAM target and avoids a broker or extra worker service. Migrations run explicitly, not concurrently at every API start. The bootstrap has no business tables or real Ozon integration; later tasks add these behind an Ozon client boundary.

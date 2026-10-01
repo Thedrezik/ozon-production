@@ -11,6 +11,10 @@ class JsonFormatter(logging.Formatter):
                 "level": record.levelname,
                 "logger": record.name,
                 "message": record.getMessage(),
+                **{key: getattr(record, key) for key in (
+                    "ozon_endpoint", "ozon_attempt", "ozon_status", "ozon_error",
+                    "ozon_duration_ms",
+                ) if hasattr(record, key)},
             },
             ensure_ascii=False,
         )

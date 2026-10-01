@@ -23,18 +23,20 @@ Last updated: 2026-10-01
 - Task 017: transactional in-app notification center, per-user preferences, admin alerts, deduplication, deadline reconciliation, and Web Push/Telegram delivery queue.
 - Task 018: VAPID configuration/key generation, authenticated device subscriptions, Web Push adapter on the existing queue, retries/receipts, expired-subscription cleanup, PWA push and entity links, preferences and browser fallback.
 - Task 019: Telegram deep-link binding with hashed one-time codes and webhook secret, opt-in delivery through the existing notification queue, bounded retries, entity links, and unlink controls.
+- Task 020: backend Seller API client/interface and offline adapter, explicit API-key connection check, bounded HTTP retries/backoff/rate-limit cooldown, typed safe errors and structured metadata logs; official contracts recorded in `OZON_API.md`.
 
 ## Current
 
-- Task 019 complete. Apply migrations through `0015_telegram`; configure Telegram bot token, username, webhook secret and public app URL before enabling Telegram delivery.
+- Task 020 complete. No new migration. Apply migrations through `0015_telegram`; Ozon client is selected by backend settings and makes no automatic API requests.
 
 ## Next
 
-- Task 020 has not started.
+- Task 021 (real FBS import) has not started.
 
 ## Known Issues
 
-- Docker is unavailable in this environment, so PostgreSQL/Compose checks could not be run for tasks 013–019.
+- Docker is unavailable in this environment, so PostgreSQL/Compose checks could not be run for tasks 013–020.
+- Starlette emits a dependency deprecation warning about its TestClient/httpx integration; tests pass.
 - Web Push UI smoke passed on mock data; actual OS push reception awaits deployment with VAPID/HTTPS. The earlier two-browser SSE scenario still awaits a running deployment.
 - Ozon `order_number` and warehouse values are stored for filtering but upstream integration has not yet been added to populate those nullable columns.
 - Real Ozon tariff mapping remains pending official field/semantics verification during integration. No money at risk is inferred from order value or rates alone.
@@ -44,7 +46,7 @@ Last updated: 2026-10-01
 
 ## Ozon Integration
 
-- Not connected. Mock Mode only; no real Ozon credentials or API calls.
+- Backend real client is available; Mock Mode remains the default. No live account check or real order import was performed. Official `/v1/roles`, authentication and rate-limit contract verified on 2026-10-01; deprecated warehouse v1 excluded. See `OZON_API.md`.
 
 ## Deployment
 
@@ -52,7 +54,8 @@ Last updated: 2026-10-01
 
 ## Last Tests
 
-- Backend: 62 pytest tests passed; Ruff passed. Telegram binding, existing queue fan-out, opt-out, API failure retry and duplicate suppression covered with mocked provider transport.
+- Backend: 104 pytest tests passed (42 Seller API tests using mock HTTP/virtual time); Ruff passed for app, tests and Alembic. Success, timeout/network, 4xx/5xx/429, retry exhaustion, safe logs, connection checks, mock compatibility and HTTP lifecycle covered.
 - Database: SQLite Alembic upgrade/downgrade/upgrade through 0015 passed. Docker/PostgreSQL unavailable.
-- Frontend: ESLint, TypeScript and production PWA build passed (`--configLoader runner`); Telegram preferences and linking UI included.
+- Frontend: unchanged in task 020; previous ESLint, TypeScript and production PWA build passed (`--configLoader runner`).
+- Health: task 020 TestClient `/api/health` and `/api/health/ready` returned 200 on SQLite; Docker health checks unavailable.
 - UI: Chrome mock smoke passed for entity links, unsupported browser, explicit permission denial/grant, subscribe/test/unsubscribe; `/api/health` and `/api/health/ready` returned 200 on SQLite.
