@@ -1,5 +1,27 @@
 # Architecture Decisions
 
+## 033 — Real application E2E with the existing Playwright browser stack
+
+Use Playwright/Chromium (installed Edge on Windows) and a single `npm run test:e2e`
+command that builds the production PWA. Six scenarios run sequentially at desktop
+and mobile viewports with independent admin/worker/manager contexts. Each scenario
+gets a fresh temporary SQLite database/uploads directory, all Alembic migrations,
+the existing mock order seed, and the ordinary FastAPI/Uvicorn app. No replacement
+backend, test API endpoints, production credentials or deployment reset. Only the
+external Ozon adapter uses existing synthetic fixtures with local changes; import,
+durable webhook and reconciliation use existing domain code. A static/API streaming
+proxy injects transport outage/SSE loss and a competing-write barrier for deterministic
+409 coverage. Real SSE delivery and focus fallback are checked separately.
+
+No automatic retries. State-based waits include the existing 30-second offline
+recovery budget. Keep screenshots/DOM/traces/logs only for failures in ignored
+artifacts; shut down contexts/backend before deleting only the generated directory.
+SQLite reloads strip tzinfo: serialize order timestamps explicitly as UTC so a UI
+procurement deadline round trip remains valid. A regression test covers that bug.
+Docker is unavailable locally; PostgreSQL/Caddy/HTTPS, physical devices/provider
+delivery and the mandatory Linux restore drill remain task 034 deployment gates.
+See [E2E coverage and runbook](E2E.md).
+
 ## 032 — Measured bounds for the single small VPS
 
 Keep one backend worker, the 2+1 DB pool and existing sequential Ozon scheduler/

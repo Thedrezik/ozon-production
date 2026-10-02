@@ -8,6 +8,7 @@
 **/.venv/
 frontend/node_modules/
 frontend/dist/
+frontend/e2e-results/
 frontend/.npm-cache/
 *.pyc
 .coverage

@@ -16,6 +16,22 @@ from app.orders import seed_mock_orders
 from tests.test_orders import login, setup_app
 
 
+def test_order_deadline_can_be_round_tripped_to_procurement(tmp_path):
+    app = setup_app(tmp_path)
+    with Session(app.state.engine) as db:
+        seed_mock_orders(db)
+    with TestClient(app) as client:
+        headers = login(client)
+        order = client.get("/api/orders?q=MOCK-NORMAL").json()["items"][0]
+        assert order["shipment_deadline"].endswith(("Z", "+00:00"))
+        response = client.post("/api/procurement", headers=headers, json={
+            "material_name": "Synthetic edge", "quantity": "2", "unit": "m",
+            "order_ids": [order["id"]], "needed_by": order["shipment_deadline"],
+        })
+        assert response.status_code == 201
+        assert response.json()["order_ids"] == [order["id"]]
+
+
 def test_procurement_links_history_permissions_and_overdue(tmp_path):
     app = setup_app(tmp_path)
     with Session(app.state.engine) as db:

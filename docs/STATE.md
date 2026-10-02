@@ -4,6 +4,8 @@ Last updated: 2026-10-02
 
 ## Completed
 
+- Task 033: real FastAPI + production-PWA E2E using existing Playwright/Mock Mode; 6 scenarios × desktop/mobile, fresh migrated SQLite DB/uploads per case, worker/manager sessions, full blocker/procurement/production workflow, risk/priority, RBAC, bulk/comments/photos/QR, SSE/fallback, offline/409/revocation and mock Ozon changes. Two full runs: 12/12 each, no retries. Fixed UTC order timestamp round trip found by UI procurement. See `E2E.md`. No commit/push.
+
 - Task 032: measured small-VPS performance; bounded queue/risk/profile/history reads, SQL dashboard counters/workload, shared risk pass, notification/procurement dedupe prefetch, SSE bounds/connection release, photo memory reduction, Compose limits and six indexes in `0023_performance`. Synthetic benchmarks up to 10,007 orders; see `PERFORMANCE.md`. No commit/push.
 
 - Task 031: security review and hardening of existing auth/RBAC/session, production config, headers/CSP, secret handling/logging, JSON/Telegram limits and SSE reauthentication. User-management row locks close promotion/last-super-admin races; SECURITY.md records controls and deployment gates. No commit/push.
@@ -47,11 +49,11 @@ Last updated: 2026-10-02
 
 ## Current
 
-- Task 032 completed locally. Migration head: `0023_performance`. Container startup/RSS/CPU, PostgreSQL query plans and real VPS concurrency remain deployment checks; Docker is unavailable here. No commit/push.
+- Task 033 completed locally. Migration head: `0023_performance`. Real application E2E uses SQLite; Docker/PostgreSQL/Caddy/HTTPS and physical-device/provider checks remain deployment gates. No commit/push.
 
 ## Next
 
-- Await a separate task request; task 033 has not been started. Task 034 must pass the mandatory isolated Linux VPS backup → modify → restore → verify gate before production launch.
+- Await a separate task request; task 034 has not been started. Task 034 must verify isolated container E2E/PostgreSQL/Caddy and pass the mandatory isolated Linux VPS backup → modify → restore → verify gate before production launch.
 
 ## Known Issues
 
@@ -59,7 +61,7 @@ Last updated: 2026-10-02
 
 - Full PostgreSQL restore remains unverified on the target Linux VPS: mandatory task 034 launch gate. User's Windows Docker run confirmed unique isolated volumes, migrations, PostgreSQL/uploads archive creation, publication to /data/backups and isolated failure cleanup. Windows harness stopped at `Unexpected backup bundle members`; full Windows restore is non-authoritative because of PowerShell/Git Bash/MSYS compatibility. Docker/Caddy/shellcheck unavailable in the agent environment. Real Ozon connection/delivery remains an HTTPS deployment check.
 - Starlette emits a dependency deprecation warning about its TestClient/httpx integration; tests pass.
-- Web Push UI smoke passed on mock data; actual OS push reception awaits deployment with VAPID/HTTPS. The earlier two-browser SSE scenario still awaits a running deployment.
+- Web Push UI smoke passed on mock data; actual OS push reception awaits deployment with VAPID/HTTPS. Real two-context SSE delivery and disabled-SSE focus fallback passed locally in task 033; Caddy/HTTPS reconnect behavior remains a deployment check.
 - Real account import remains a deployment check. All automated import validation uses synthetic fixtures/mock HTTP; no live Ozon calls were made.
 - Confirmed v4 tariff source data is stored separately. Mapping end deadlines and unsigned discounts to the signed normalized tariff timeline remains pending; Money at Risk does not infer amounts from prices/rates.
 - Physical phone camera/HTTPS PWA validation remains a deployment check. Automated mobile UI and synthetic camera QR scanning passed. HEIC/HEIF is unsupported; upload JPEG, PNG or WebP.
@@ -78,7 +80,6 @@ Last updated: 2026-10-02
 
 ## Last Tests
 
-- Task 032: full backend suite 271 passed (earlier complete runs: 263 and 270 passed). Final targeted performance/SSE regressions and notification preference/deduplication checks passed. Existing Starlette/httpx and Alembic deprecation warnings remain.
-- Ruff app/tests/Alembic and runtime profiler, compileall, frontend lint/typecheck/build, Compose YAML/resource static validation and git diff --check passed. Initial sandbox esbuild access error was resolved by the approved build outside the sandbox.
-- Synthetic API benchmarks: 2,007 and 10,007 orders, query counts and Python memory; normal 10,007-order queue/dashboard/risk requests ~0.49/0.58/0.50 s locally. Startup/health/readiness and isolated JPEG/PNG/WebP memory profiling passed. See PERFORMANCE.md for exact methods and boundaries.
-- Docker unavailable: no container build/up/migrations/ps, live PostgreSQL plans or container RSS/CPU verification. No production data or real Ozon account calls. Task 030 Linux restore remains the task 034 launch gate.
+- Task 033: two full `npm run test:e2e` runs, 12 passed each (6 scenarios on desktop 1440×1000 and touch/mobile 390×844), zero retries. Each case verified migrated backend health/readiness. Failures retain screenshots/DOM/traces/logs only; successful cases discard artifacts.
+- Final full backend suite: 273 passed; targeted orders/procurement: 8 passed. Ruff app/tests/Alembic, frontend lint (including E2E scripts)/typecheck/build, offline snapshot checks, JS syntax and git diff --check passed. Existing Starlette/httpx and Alembic deprecation warnings remain.
+- Docker unavailable: no container/PostgreSQL/Caddy checks. No production data, credentials or real external endpoint calls. Container E2E and task 030 Linux restore remain task 034 deployment gates; performance measurements remain in `PERFORMANCE.md`.

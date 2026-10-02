@@ -1,6 +1,6 @@
 # Task 033 — End-to-End Tests
 
-status: pending  
+status: completed
 complexity: MEDIUM/HIGH  
 recommended_model: GPT-6 Sol
 reasoning: Medium
@@ -57,11 +57,18 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Главный E2E сценарий проходит.
-- [ ] Тест детерминирован.
-- [ ] Не требует production Ozon.
-- [ ] Ошибка E2E оставляет понятный diagnostic output.
-- [ ] STATE.md обновлён.
+- [x] Главный E2E сценарий проходит.
+- [x] Тест детерминирован.
+- [x] Не требует production Ozon.
+- [x] Ошибка E2E оставляет понятный diagnostic output.
+- [x] STATE.md обновлён.
+
+Verification: `cd frontend && npm run test:e2e` — 12 passed, twice from fresh
+databases; desktop 1440×1000 and mobile 390×844, zero retries. Backend 273 passed;
+Ruff app/tests/Alembic, frontend lint/typecheck/build, offline snapshot checks and
+git diff --check passed. Coverage/setup/deployment boundaries: `/docs/E2E.md`.
+Docker unavailable: PostgreSQL/Caddy/container verification remains task 034.
+No commit/push; task 034 not started.
 
 ## Completion
 

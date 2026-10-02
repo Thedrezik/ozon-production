@@ -144,19 +144,24 @@ def production_profiles(db: Db, orders=None) -> dict[tuple[str, str], ProductPro
 def order_data(order: Order, profiles: dict[tuple[str, str], ProductProductionProfile] | None = None,
                priority: dict | None = None, tariff: dict | None = None) -> dict:
     profiles = profiles or {}
+    def utc(value):
+        # SQLite loses tzinfo on reload; timestamps in storage are always UTC.
+        # Preserve timezone information when the UI sends a deadline back to API.
+        return value.replace(tzinfo=timezone.utc) if value and value.tzinfo is None else value
+
     return {
         "id": order.id, "posting_number": order.posting_number,
         "order_number": order.order_number, "warehouse_id": order.warehouse_id,
         "ozon_status": order.ozon_status, "internal_status": order.internal_status,
-        "production_started_at": order.production_started_at,
-        "production_completed_at": order.production_completed_at,
-        "packing_started_at": order.packing_started_at,
-        "ready_to_ship_at": order.ready_to_ship_at,
-        "handed_to_shipping_at": order.handed_to_shipping_at,
-        "done_at": order.done_at,
-        "shipment_deadline": order.shipment_deadline,
-        "shipment_date_without_delay": order.shipment_date_without_delay,
-        "tariff_deadline": order.tariff_deadline, "priority": priority, "tariff": tariff, "items": [
+        "production_started_at": utc(order.production_started_at),
+        "production_completed_at": utc(order.production_completed_at),
+        "packing_started_at": utc(order.packing_started_at),
+        "ready_to_ship_at": utc(order.ready_to_ship_at),
+        "handed_to_shipping_at": utc(order.handed_to_shipping_at),
+        "done_at": utc(order.done_at),
+        "shipment_deadline": utc(order.shipment_deadline),
+        "shipment_date_without_delay": utc(order.shipment_date_without_delay),
+        "tariff_deadline": utc(order.tariff_deadline), "priority": priority, "tariff": tariff, "items": [
             {"product_name": item.product_name, "offer_id": item.offer_id, "sku": item.sku,
              "quantity": item.quantity,
              "production_profile": (
