@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { environment, login, api, order, openOrder, until, text, artifacts } from './helpers.mjs'
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
-const browser = await chromium.launch({ ...(process.env.E2E_BROWSER_CHANNEL ? { channel: process.env.E2E_BROWSER_CHANNEL } : process.platform === 'win32' ? { channel: 'msedge' } : {}), headless: true })
+const browser = await chromium.launch({ ...(process.env.E2E_BROWSER_CHANNEL ? { channel: process.env.E2E_BROWSER_CHANNEL } : process.platform === 'win32' ? { channel: 'msedge' } : {}), headless: true,
+  ...(process.env.E2E_CONTAINER === 'true' ? { args: ['--ignore-certificate-errors'] } : {}) })
 
 const scenarios = {
   async 'production workflow'({ admin, worker, manager, env }) {
@@ -189,7 +190,7 @@ const scenarios = {
     await text(worker.locator(`#order-${target.id}`), 'В производстве')
     assert.equal((await api(admin, `/orders/${target.id}/history`)).filter(row => row.new_status === 'IN_PRODUCTION').length, 1)
     // Explicitly drop SSE: focus reconciliation must still load the real API.
-    env.disconnectEvents(true)
+    await env.disconnectEvents(true)
     await worker.reload()
     await worker.getByRole('button', { name: 'Очередь', exact: true }).click()
     await text(worker.locator(`#order-${target.id}`), 'В производстве')
@@ -250,18 +251,18 @@ const scenarios = {
     const card = await openOrder(worker, 'MOCK-NORMAL')
     const target = await order(admin, 'MOCK-NORMAL')
     const administrator = await api(admin, '/auth/me')
-    env.raceBeforeClaim(() => api(admin, `/orders/${target.id}/assignment`, 'PUT', { user_id: administrator.id }))
+    await env.raceBeforeClaim(() => api(admin, `/orders/${target.id}/assignment`, 'PUT', { user_id: administrator.id }))
     await card.getByRole('button', { name: 'Взять в работу', exact: true }).click()
     await text(worker.locator('main'), 'Заказ изменился или переход уже недоступен')
     assert.equal((await order(admin, 'MOCK-NORMAL')).assigned_user.id, administrator.id)
-    env.outage(true)
+    await env.outage(true)
     await worker.getByRole('button', { name: 'Обновить очередь', exact: true }).click()
     await text(worker.locator('main'), 'OFFLINE · Нет связи с сервером')
     assert.equal(await worker.evaluate(() => navigator.onLine), true)
     await worker.getByRole('button', { name: 'Закрыть и удалить offline-данные', exact: true }).click()
     await text(worker.locator('main'), 'Нет сохранённой очереди')
     assert.equal(await worker.evaluate(() => sessionStorage.getItem('production.queue.v1')), null)
-    env.outage(false)
+    await env.outage(false)
     await worker.getByRole('button', { name: 'Проверить соединение', exact: true }).click()
     await text(worker.locator('main'), 'Очередь загружена с сервера', 45000)
     await contexts[1].setOffline(true)
@@ -296,6 +297,7 @@ try {
       try {
         for (let i = 0; i < 3; i++) {
           const context = await browser.newContext({ viewport, baseURL: env.origin, serviceWorkers: 'allow', timezoneId: 'Europe/Moscow',
+            ...(process.env.E2E_CONTAINER === 'true' ? { ignoreHTTPSErrors: true } : {}),
             ...(viewportName === 'mobile' ? { isMobile: true, hasTouch: true } : {}) })
           await context.tracing.start({ screenshots: true, snapshots: true, sources: true })
           await context.addInitScript(() => {
@@ -314,11 +316,13 @@ try {
         for (const page of pages) { page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message)) }
         await scenario({ admin: pages[0], worker: pages[1], manager: pages[2], contexts, env })
         assert.deepEqual(errors, [], 'uncaught browser errors')
+        await env.verifyDeployment?.()
         passed++
         console.log(`PASS ${viewportName}: ${name}`)
       } catch (error) {
         failed++
         console.error(`FAIL ${viewportName}: ${name}\n${error.stack}`)
+        await env.captureLogs?.().catch(() => {})
         await artifacts(contexts, `${viewportName}-${name.replaceAll(' ', '-')}`, env.logs(), error)
       } finally {
         for (const context of contexts) { await context.tracing.stop().catch(() => {}); await context.close() }

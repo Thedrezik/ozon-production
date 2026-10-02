@@ -1,6 +1,8 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
+deployment-results/
 **/__pycache__/
 **/.pytest_cache/
 **/.ruff_cache/

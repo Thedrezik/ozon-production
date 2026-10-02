@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func, select
 
 from app.api_orders import priority_for, priority_settings, production_profiles
 from app.auth import Db, require
@@ -33,9 +34,15 @@ def _snapshot(db: Db, request: Request, as_of: datetime | None = None, *,
                 yield ({"id": order.id, "posting_number": order.posting_number,
                         "internal_status": order.internal_status},
                        parse_normalized_steps(order.tariff_steps), priority_for(order, profiles, settings, now))
-    return aggregate(source_rows if source_rows is not None else rows(), now,
-                     config.organization_timezone, config.money_risk_near_hours, cutoffs,
-                     include_orders=include_orders, order_limit=order_limit, category_filter=category_filter)
+    snapshot = aggregate(source_rows if source_rows is not None else rows(), now,
+                         config.organization_timezone, config.money_risk_near_hours, cutoffs,
+                         include_orders=include_orders, order_limit=order_limit, category_filter=category_filter)
+    if source_rows is None:
+        # Missing real tariff mappings must not look like confirmed zero risk.
+        # Count in SQL without loading/evaluating all unpriced orders.
+        missing = active_orders().where(Order.tariff_steps.is_(None)).subquery()
+        snapshot["unpriced_count"] += db.scalar(select(func.count()).select_from(missing)) or 0
+    return snapshot
 
 
 @router.get("")

@@ -7,7 +7,7 @@ reasoning: Medium
 
 ## Goal
 
-Подготовить безопасный production deployment на VPS, не ломая существующий VPN.
+Подготовить безопасный production deployment на отдельном VPS: 1 CPU / 1 GB RAM.
 
 ## Read First
 
@@ -26,7 +26,8 @@ reasoning: Medium
 
 - Проверить текущую deployment architecture.
 - Caddy + HTTPS.
-- Не изменять существующий VPN без необходимости.
+- Отдельный VPS; Caddy/backend/PostgreSQL на одном сервере.
+- Сохранить один backend worker, небольшой pool и все существующие функции; lightweight review выполняется позднее отдельной задачей.
 - Открывать только необходимые порты.
 - Webhook должен быть доступен Ozon.
 - Продумать доступ UI: публичный HTTPS с auth либо ограничение сетью, если это практически совместимо с телефонами работников.
@@ -57,13 +58,21 @@ reasoning: Medium
 
 - [ ] Production compose запускается.
 - [ ] HTTPS работает.
-- [ ] VPN продолжает работать.
+- [ ] На отдельном VPS 1 CPU / 1 GB RAM подтверждены resource limits, запас ОС/Docker, отсутствие OOM и приемлемая отзывчивость.
 - [ ] Frontend/backend доступны по ожидаемому URL.
 - [ ] Webhook route доступен извне.
 - [ ] Persistent data переживает container restart.
 - [ ] На целевом Linux VPS успешно выполнен и документирован полный isolated backup/restore drill из task 030 со всеми проверками выше; production volumes не затронуты. Обязательное условие перед production launch.
-- [ ] DEPLOYMENT.md создан.
-- [ ] STATE.md обновлён.
+- [x] DEPLOYMENT.md создан.
+- [x] STATE.md обновлён.
+
+Implementation prepared 2026-10-02: standalone production Compose/env, explicit
+update/migration/rollback operations, automated guarded Linux restore drill,
+optional PostgreSQL/Caddy HTTPS mode for the existing E2E runner, deployment smoke
+and runbook. Dedicated target: 1 CPU / 1 GB RAM, no functionality removal. Status
+remains pending: Docker daemon/target VPS/public HTTPS are
+unavailable to the agent. All runtime acceptance criteria above require actual
+execution and evidence; see docs/DEPLOYMENT.md. No commit/push; task 035 not started.
 
 ## Completion
 

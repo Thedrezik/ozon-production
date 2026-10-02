@@ -80,6 +80,8 @@ def create_blocker(payload: BlockerInput, db: Db, request: Request,
     order = db.scalar(select(Order).where(Order.id == payload.order_id).with_for_update())
     if order is None:
         raise HTTPException(404, "Order not found")
+    if order.ozon_status == "cancelled":
+        raise HTTPException(409, "Ozon cancelled this posting; manager review required")
     if order.internal_status not in (*BLOCKABLE, "BLOCKED"):
         raise HTTPException(409, "Order cannot be blocked")
     if db.get(BlockerType, payload.type_code) is None:
@@ -146,7 +148,7 @@ def update_blocker(blocker_id: int, payload: BlockerUpdate, db: Db, request: Req
         db.flush()
         remaining = db.scalar(select(Blocker.id).where(Blocker.order_id == order_id,
                                                          Blocker.status.in_(ACTIVE)).limit(1))
-        if remaining is None and order.internal_status == "BLOCKED":
+        if remaining is None and order.internal_status == "BLOCKED" and order.ozon_status != "cancelled":
             first = db.scalar(select(Blocker.previous_production_status).where(
                 Blocker.order_id == order_id, Blocker.previous_production_status.is_not(None)
             ).order_by(Blocker.id.desc()).limit(1))

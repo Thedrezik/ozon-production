@@ -1,6 +1,6 @@
 # Architecture (bootstrap)
 
-The first deployment is one small Linux VPS (about 1 CPU and 1 GB RAM). Docker Compose runs PostgreSQL, one FastAPI/Uvicorn process, and Caddy. Caddy serves the compiled React PWA and proxies `/api/*` to FastAPI. Only Caddy exposes public ports. PostgreSQL and the API stay on the Compose network.
+The recommended minimum production deployment is a dedicated Linux VPS with 1 CPU and 1 GB RAM. Docker Compose runs PostgreSQL, one FastAPI/Uvicorn process, and Caddy. Caddy serves the compiled React PWA and proxies `/api/*` to FastAPI. Only Caddy exposes public ports. PostgreSQL and the API stay on the Compose network. Task 034 preserves all existing functions and the small database pool; lightweight review is a later separate stage. Actual target capacity remains an acceptance check.
 
 ## Components and data
 

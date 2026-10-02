@@ -127,3 +127,19 @@ def test_finance_permission_and_drilldown_on_mock_data(tmp_path):
             login(viewer, "viewer", "viewer-password-123")
             assert viewer.get("/api/money-at-risk").status_code == 403
             assert viewer.get(f"/api/money-at-risk/orders?bucket={first['key']}").status_code == 403
+
+
+def test_missing_tariff_timeline_is_reported_as_unknown_instead_of_zero_risk(tmp_path):
+    app = setup_app(tmp_path)
+    with Session(app.state.engine) as db:
+        seed_mock_orders(db)
+        for order in db.scalars(select(Order)):
+            order.tariff_steps = None
+        db.commit()
+    with TestClient(app) as client:
+        login(client)
+        summary = client.get("/api/money-at-risk").json()
+        assert Decimal(summary["total"]) == 0
+        # Six active postings, excluding the internal/external cancellation.
+        assert summary["unpriced_count"] == 6
+        assert client.get("/api/dashboard").json()["money_at_risk"]["unpriced_count"] == 6

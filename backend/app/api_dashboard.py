@@ -80,6 +80,6 @@ def dashboard(db: Db, request: Request,
                      for user_id, name, count in workload],
     }
     if can_view_finance:
-        result["money_at_risk"] = {"total": risk["total"], "buckets": [
+        result["money_at_risk"] = {"total": risk["total"], "unpriced_count": risk["unpriced_count"], "buckets": [
             {key: value for key, value in bucket.items() if key != "orders"} for bucket in risk["buckets"]]}
     return result

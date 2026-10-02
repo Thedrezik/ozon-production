@@ -24,7 +24,7 @@ services:
     mem_limit: 384m
     cpus: 0.75
     pids_limit: 100
-    env_file: .env
+    env_file: ${APP_ENV_FILE:-.env}
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       APP_ENV: ${APP_ENV:?Set APP_ENV explicitly in .env}

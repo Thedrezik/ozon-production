@@ -28,6 +28,8 @@
             }
             reverse_proxy backend:8000 {
                 header_up X-Ozon-Source-IP {remote_host}
+                # Immediate flush for SSE; WebSocket upgrades are supported natively.
+                flush_interval -1
             }
         }
 

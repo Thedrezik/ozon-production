@@ -4,82 +4,41 @@ Last updated: 2026-10-02
 
 ## Completed
 
-- Task 033: real FastAPI + production-PWA E2E using existing Playwright/Mock Mode; 6 scenarios × desktop/mobile, fresh migrated SQLite DB/uploads per case, worker/manager sessions, full blocker/procurement/production workflow, risk/priority, RBAC, bulk/comments/photos/QR, SSE/fallback, offline/409/revocation and mock Ozon changes. Two full runs: 12/12 each, no retries. Fixed UTC order timestamp round trip found by UI procurement. See `E2E.md`. No commit/push.
-
-- Task 032: measured small-VPS performance; bounded queue/risk/profile/history reads, SQL dashboard counters/workload, shared risk pass, notification/procurement dedupe prefetch, SSE bounds/connection release, photo memory reduction, Compose limits and six indexes in `0023_performance`. Synthetic benchmarks up to 10,007 orders; see `PERFORMANCE.md`. No commit/push.
-
-- Task 031: security review and hardening of existing auth/RBAC/session, production config, headers/CSP, secret handling/logging, JSON/Telegram limits and SSE reauthentication. User-management row locks close promotion/last-super-admin races; SECURITY.md records controls and deployment gates. No commit/push.
-- Task 030: PostgreSQL/uploads backups, retention, guarded transactional DB restore, staged uploads restore, Linux operations guide and automated checks. Backup creation confirmed by user's real Docker run on Windows; final Linux restore drill is a mandatory task 034 production-launch gate.
-- Task 001: application bootstrap, database, PWA and local Compose checks.
-- Task 002: users, roles, permissions, sessions, admin bootstrap, audit log, login limiter, and frontend login/user management.
-- Task 003: repeatable mock orders, production queue, assignments, internal status history, mobile task screens and SSE refresh.
-- Task 004: full production transitions, configurable status labels/order, stage timestamps and cycle-time data.
-- Task 005: comments with author/time, mentions-ready links, and unified order timeline for comments, statuses and assignments.
-- Task 006: production blockers, manager tasks, status restoration, timeline/audit and mobile problem actions.
-- Task 007: manager task queue, source-keyed deduplication and resolution boundary, manager permissions, filters and claim flow.
-- Task 008: procurement tasks, links to multiple orders and blockers, purchaser queue, history, overdue escalation through manager tasks, and mobile procurement screen.
-- Task 009: product production profiles by offer_id/SKU, admin CRUD, audit, and order normative-time display.
-- Task 010: explainable production priority, confirmed tariff and value inputs, feasibility, blocked flag, audited manual override/pin, configurable weights, and ranked queue.
-- Task 011: normalized tariff timeline, current/next step and signed Decimal financial effect, mock scenario, queue display and finance permission filtering.
-- Task 012: Money at Risk totals by configurable local-time buckets, category split, finance-only paginated order drill-down, and conservative handling of unknown tariff costs.
-- Task 013: manager dashboard with risk, urgent order and task counts, attention list, staff workload, and filtered drill-downs.
-- Task 014: worker-first mobile navigation for My Tasks, Queue and Problems; priority-ranked Next Task selection using existing queue/claim APIs; compact worker cards and permission-aware financial detail visibility.
-- Task 015: queue search across posting/order numbers, SKU, offer_id and product; combined status/Ozon status/priority/worker/blocker/readiness/deadline/warehouse/product filters; safe paginated bulk assignment/status transitions with backend permissions and audit.
-- Task 016: shared SSE refresh for orders, blockers and manager tasks across active screens; reconnect, focus and periodic API reconciliation.
-- Task 017: transactional in-app notification center, per-user preferences, admin alerts, deduplication, deadline reconciliation, and Web Push/Telegram delivery queue.
-- Task 018: VAPID configuration/key generation, authenticated device subscriptions, Web Push adapter on the existing queue, retries/receipts, expired-subscription cleanup, PWA push and entity links, preferences and browser fallback.
-- Task 019: Telegram deep-link binding with hashed one-time codes and webhook secret, opt-in delivery through the existing notification queue, bounded retries, entity links, and unlink controls.
-- Task 020: backend Seller API client/interface and offline adapter, explicit API-key connection check, bounded HTTP retries/backoff/rate-limit cooldown, typed safe errors and structured metadata logs; official contracts recorded in `OZON_API.md`.
-
-- Task 021: explicit admin FBS v4 import via the existing client, cursor pagination, Decimal product prices, unique posting upserts, isolated production data, separate raw/tariff diagnostics, fixtures and transactional rollback tests.
-- Task 022: verified Ozon FBS/rFBS push endpoint and TYPE_PING handshake, durable event inbox, idempotency, restart-safe processing/retries, shared get/upsert, cancellation manager tasks, existing notifications/projections and post-commit SSE.
-
-- Task 023: lifespan reconciliation via shared v4 cursor import/upsert and webhook effects, missing-posting get backfill, isolated mock/real sync state, deduplicated outage notifications/tasks, recovery, freshness banner and post-commit SSE.
-- Task 024: shared cancellation/date-change effects across import, webhook and reconciliation; cancelled queue/archive rules, responsible-worker alerts, stage-aware Manager Tasks, safe old/new audit/timeline, deadline notice retirement and read-time priority/risk refresh. Production history remains intact.
-
-- Task 025: encrypted authoritative credentials, real-client validation before rotation, admin integration status, UTC expiration settings, source-keyed alerts/critical tasks, safe audit and shared runtime refresh.
-
-- Task 026: local storage interface, bounded validated/compressed photos for orders/blockers/comments, authenticated galleries, audit/timeline, posting QR and PWA camera barcode lookup.
-
-- Task 027: short-lived tab-scoped read-only offline queue, cached-shell reload, explicit OFFLINE/stale/time display, session-checked reconnect/server refresh, conflict feedback and automated production-PWA browser checks.
-
-- Task 028: SQL production analytics, local-date period filter, stage/cycle averages, deadline-cohort overdue, blocker reasons, SKU/offer actual averages with existing normative profiles, actor-based employee throughput, current assignment workload, pagination and RBAC; migration `0021_analytics`.
-
-- Task 029: existing audit extended with transactional safe old/new snapshots, actor/IP/User-Agent, immutable ORM/PostgreSQL guards, critical-action coverage, audit.view API and mobile filtered paginated viewer; migration `0022_audit`.
+- Tasks 001–033: core production workflow, RBAC/auth/audit, priority/tariffs/Money at Risk, blockers/Manager Tasks/procurement, Ozon import/webhook/reconciliation/encrypted credentials, photos/QR, notifications/Web Push/Telegram, PWA/offline, analytics, backup, security and performance hardening. Details remain in tasks/ and the dedicated docs.
+- Task 033: real application desktop/mobile E2E on migrated isolated SQLite, 12/12 without retries. Task 032 keeps one worker, pool 2+1 and migration head `0023_performance`.
+- Task 035: **pre-deployment final review completed** before renting VPS. Full PRODUCT/code coverage and five finding categories are in [FINAL_REVIEW.md](FINAL_REVIEW.md). Fixed cancelled-posting blocker closure, priority-response finance redaction, P4 filter and missing-tariff unknown-risk reporting; regression tests added. No features removed, no deployment/commit/push/task 036.
 
 ## Current
 
-- Task 033 completed locally. Migration head: `0023_performance`. Real application E2E uses SQLite; Docker/PostgreSQL/Caddy/HTTPS and physical-device/provider checks remain deployment gates. No commit/push.
+- Task 034 dedicated 1 CPU / 1 GB implementation prepared: standalone production Compose/private env generator; explicit consistent backup/update/migration/rollback operations; guarded native Linux restore drill; optional PostgreSQL/Caddy HTTPS mode for existing E2E with query/resource probes; public smoke and `docs/DEPLOYMENT.md`.
+- Task 034 remains **pending** only for unavailable real Linux VPS/live acceptance. Preparation exists; runtime validation is deferred until final product corrections. Task 035 completed as a review, not production acceptance.
 
 ## Next
 
-- Await a separate task request; task 034 has not been started. Task 034 must verify isolated container E2E/PostgreSQL/Caddy and pass the mandatory isolated Linux VPS backup → modify → restore → verify gate before production launch.
+- User selects final product corrections/lightweight options from FINAL_REVIEW.md; no next task created automatically.
+- Afterwards resume task 034: target preflight, guarded Linux restore, isolated PostgreSQL/Caddy E2E, public HTTPS/security/persistence/capacity and provider/physical-phone gates in DEPLOYMENT.md. Mark 034 completed only after actual runtime acceptance passes.
 
 ## Known Issues
 
-- Performance numbers use Windows/SQLite synthetic data, not VPS guarantees. Exact priority/risk remains linear in active postings; native photo RSS and container quotas need Linux verification. WebP is limited to 10 MP after measured 20 MP decoder memory exceeded the 384 MiB backend cap; JPEG/PNG remain 20 MP. Prefer off-VPS image builds (local frontend build peak ~428 MiB). See `PERFORMANCE.md` for deployment checks.
-
-- Full PostgreSQL restore remains unverified on the target Linux VPS: mandatory task 034 launch gate. User's Windows Docker run confirmed unique isolated volumes, migrations, PostgreSQL/uploads archive creation, publication to /data/backups and isolated failure cleanup. Windows harness stopped at `Unexpected backup bundle members`; full Windows restore is non-authoritative because of PowerShell/Git Bash/MSYS compatibility. Docker/Caddy/shellcheck unavailable in the agent environment. Real Ozon connection/delivery remains an HTTPS deployment check.
-- Starlette emits a dependency deprecation warning about its TestClient/httpx integration; tests pass.
-- Web Push UI smoke passed on mock data; actual OS push reception awaits deployment with VAPID/HTTPS. Real two-context SSE delivery and disabled-SSE focus fallback passed locally in task 033; Caddy/HTTPS reconnect behavior remains a deployment check.
-- Real account import remains a deployment check. All automated import validation uses synthetic fixtures/mock HTTP; no live Ozon calls were made.
-- Confirmed v4 tariff source data is stored separately. Mapping end deadlines and unsigned discounts to the signed normalized tariff timeline remains pending; Money at Risk does not infer amounts from prices/rates.
-- Physical phone camera/HTTPS PWA validation remains a deployment check. Automated mobile UI and synthetic camera QR scanning passed. HEIC/HEIF is unsupported; upload JPEG, PNG or WebP.
-- Additional integration/manager automation rules await their source data and later tasks; reconciliation errors and cancellation-after-start already use source-keyed tasks.
-- Initial unknown postings older than the configured discovery window (30 days) require the existing historical importer. Outage discovery is capped at the verified 365-day API window; known nonterminal postings are checked independently. API_KEY_EXPIRING now uses the encrypted credential expiration configuration.
-
-- Offline queue retains only the last loaded page for up to one hour in the same tab; a new tab needs a network queue load. No offline login, filters, details, photos or mutation queue. Private-device use remains necessary for local display snapshots.
-
-## Ozon Integration
-
-- Existing real client supports `/v1/roles`, current `/v4/posting/fbs/list` and `/v3/posting/fbs/get`. Push payloads, handshake, responses, retries and source networks verified in official browser docs on 2026-10-01. Mock Mode remains default, webhook disabled by default; fixture/mock HTTP tests only. See `OZON_API.md`.
+- MVP does not fully satisfy PRODUCT: real tariff adapter absent; clock-based deadline/procurement alerts depend on reads/changed imports; DEADLINE_RISK/STALLED_ORDER/UNASSIGNED_ORDER have no automatic evaluators. Worker comments/packing blockers, list limits, timezone/detail UX, workload minutes and custom-role/configuration gaps remain review decisions. See FINAL_REVIEW.md for evidence and severity.
+- Refresh triggers overlap (SSE reconnect, auth 30 s, refresh 60 s); external HTTP retains DB transactions/slots with pool 2+1. These are measured-capacity/final-correction concerns, not evidence that every optional function must be removed.
+- Supported Docker daemon/target VPS unavailable here. Windows exposes only service WSL docker-desktop; its CLI refuses supported access. No Compose config/build/start, PostgreSQL query plans, container E2E, Caddy/public TLS or actual Linux restore were executed. New runners are implemented but runtime-unverified; YAML parsing/Git Bash synthetic checks are not Linux acceptance.
+- Full isolated Linux backup → modify DB/uploads → restore → verify is a mandatory launch blocker. Earlier Windows Docker evidence confirmed backup creation, not authoritative restore. Production volumes must never be mounted/deleted by drills.
+- Performance measurements are Windows/SQLite comparisons; exact queue priority/risk is O(active postings). PostgreSQL/backend/Caddy RAM caps 256/384/96 MiB total 736 MiB; RAM+swap ceilings 320/512/128 MiB. Recommend 1 GiB host swap as an emergency buffer, not working RAM; reserve host memory for Linux/Docker. Target CPU/RSS/concurrency/connection capacity requires measurement. Build images and run browsers off the live 1 GB VPS; target drill can reuse DRILL_BACKEND_IMAGE. See `PERFORMANCE.md`.
+- Real Ozon import/webhook/provider delivery and physical-phone PWA/camera/Web Push remain HTTPS/device acceptance checks. Automated tests never use production provider credentials. Official Ozon contracts were verified 2026-10-01; recheck source networks on deployment (`OZON_API.md`).
+- Signed mapping of real Ozon tariff sources remains unconfirmed; Money at Risk does not infer amounts from order prices/unsigned discounts. Historical imports beyond the discovery window require the existing importer.
+- Offline queue is read-only, one loaded page/one hour/same tab; no offline auth/mutations. HEIC/HEIF unsupported; JPEG/PNG up to 20 MP, WebP up to 10 MP. Actual phone decoder RSS remains a deployment check.
+- Restore DB/uploads is not jointly atomic; pg_restore clean does not remove objects absent from dump. Schema rollback failures require stopped writers and controlled separate-DB recovery; see `DEPLOYMENT.md`/`BACKUP_RESTORE.md`.
+- Existing Starlette/httpx and Alembic deprecation warnings remain.
 
 ## Deployment
 
-- Production VPS not deployed. Apply `alembic upgrade head` before starting the updated API.
+- Production not deployed. Use `docker-compose.production.yml` via `scripts/production.sh`, private `.env.production`, backup before update and successful migration before API startup. Only TCP 80/443 are published; preserve SSH access. No Redis/Celery.
+- All live acceptance gates are NOT RUN. Task 035 was explicitly authorized before these gates; its completion does not authorize production launch or complete task 034.
 
 ## Last Tests
 
-- Task 033: two full `npm run test:e2e` runs, 12 passed each (6 scenarios on desktop 1440×1000 and touch/mobile 390×844), zero retries. Each case verified migrated backend health/readiness. Failures retain screenshots/DOM/traces/logs only; successful cases discard artifacts.
-- Final full backend suite: 273 passed; targeted orders/procurement: 8 passed. Ruff app/tests/Alembic, frontend lint (including E2E scripts)/typecheck/build, offline snapshot checks, JS syntax and git diff --check passed. Existing Starlette/httpx and Alembic deprecation warnings remain.
-- Docker unavailable: no container/PostgreSQL/Caddy checks. No production data, credentials or real external endpoint calls. Container E2E and task 030 Linux restore remain task 034 deployment gates; performance measurements remain in `PERFORMANCE.md`.
+- Task 035 baseline backend **275 passed**; final backend **279 passed**, including four new regression cases. Focused blockers/priority/Ozon changes **17 passed**, risk/dashboard/performance **16 passed**. Ruff app/tests/Alembic/deployment Python scripts passed.
+- Frontend lint/typecheck/build passed; baseline and final E2E **12/12 each**, desktop/mobile without retries, actual FastAPI/migrations/PWA on isolated SQLite. Offline snapshot/privacy/expiry/NetworkOnly tests passed. Initial sandbox esbuild parent-directory denial resolved by authorized local rerun.
+- git diff --check passed. Existing Starlette/httpx and Alembic warnings remain. Task 034's earlier Bash synthetic guards passed, not repeated as Linux acceptance.
+- Docker/PostgreSQL/Caddy/public HTTPS/container E2E/native Linux restore and external provider/physical-device checks: **NOT RUN**, commands/checklists in `DEPLOYMENT.md`.

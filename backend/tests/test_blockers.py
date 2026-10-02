@@ -1,8 +1,9 @@
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AuditLog, Blocker, BlockerType, Order
+from app.models import AuditLog, Blocker, BlockerType, ManagerTask, Order
 from app.orders import seed_mock_orders
 from tests.test_orders import login, setup_app
 
@@ -48,3 +49,33 @@ def test_blocker_lifecycle_and_permissions(tmp_path):
             assert db.scalar(select(AuditLog.id).where(AuditLog.action == "blocker.created"))
         timeline = admin.get(f"/api/orders/{order_id}/timeline").json()["items"]
         assert sum(item.get("event_type") == "blocker_created" for item in timeline) == 2
+
+
+@pytest.mark.parametrize("closed_status", ["RESOLVED", "CANCELLED"])
+def test_close_blocker_after_ozon_cancellation_without_resuming_production(tmp_path, closed_status):
+    app = setup_app(tmp_path)
+    with Session(app.state.engine) as db:
+        seed_mock_orders(db)
+        db.add(BlockerType(code="OTHER", display_name="Другое"))
+        db.commit()
+    with TestClient(app) as client:
+        headers = login(client)
+        order_id = client.get("/api/orders?status=QUEUED").json()["items"][0]["id"]
+        blocker = client.post("/api/blockers", headers=headers, json={
+            "order_id": order_id, "type_code": "OTHER", "description": "Нет детали",
+        }).json()
+        with Session(app.state.engine) as db:
+            db.get(Order, order_id).ozon_status = "cancelled"
+            db.commit()
+        response = client.patch(f"/api/blockers/{blocker['id']}", headers=headers,
+                                json={"status": closed_status})
+        assert response.status_code == 200
+        with Session(app.state.engine) as db:
+            assert db.get(Blocker, blocker["id"]).status == closed_status
+            assert db.get(Order, order_id).internal_status == "BLOCKED"
+            task = db.scalar(select(ManagerTask).where(ManagerTask.source_type == "BLOCKER",
+                                                      ManagerTask.source_id == blocker["id"]))
+            assert task.status == "RESOLVED"
+        assert client.post("/api/blockers", headers=headers, json={
+            "order_id": order_id, "type_code": "OTHER", "description": "Ещё проблема",
+        }).status_code == 409

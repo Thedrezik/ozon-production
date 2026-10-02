@@ -1,5 +1,53 @@
 # Architecture Decisions
 
+## 035 — Pre-deployment review before deferred VPS acceptance
+
+At the user's explicit instruction, complete task 035 as a local PRODUCT/code
+review before renting the Linux VPS. Task 034 stays pending; production launch,
+PostgreSQL/Caddy/security/capacity/restore/provider/physical-device gates remain
+mandatory later. Review completion does not assert full PRODUCT compliance.
+Record findings and optional simplification tradeoffs in FINAL_REVIEW.md; leave
+feature selection to the user. No new job/service/schema or task 036 is added.
+
+Clarify decision 006 for externally cancelled postings: closing an existing
+blocker resolves its source task but must not resume production. Preserve local
+BLOCKED until explicit manager disposition, while rejecting new blockers on an
+externally cancelled posting. Missing normalized tariffs mean unknown exposure,
+not confirmed zero; show this in risk/dashboard without inventing a mapping.
+
+## 034 — Explicit production release and isolated Linux launch gates
+
+Use a standalone production Compose file, fixed project name, private generated
+env and immutable paired application image tags. Keep the small-VPS limits and
+one worker. Separate private database/proxy networks with operator-reviewed subnets;
+fix the Caddy peer address and trust only its exact /32. Dedicated VPS minimum is
+1 CPU / 1 GB RAM. Preserve all functions, one worker and pool 2+1; no lightweight
+mode/refactor in this task. RAM caps remain 256/384/96 MiB (736 MiB combined), with
+explicit RAM+swap ceilings 320/512/128 MiB. Recommend 1 GiB host swap as a bounded
+emergency buffer, not added usable RAM. Build images/run browsers off the target;
+the native target restore drill can reuse a preloaded immutable backend image.
+Do not change firewall automatically; publish only TCP 80/443. Do not add a
+CDN/forwarded-IP trust mechanism.
+Build away from the small live VPS when possible. Secrets never enter build args
+or frontend/Caddy env; extend Docker ignore rules to cover private files/artifacts.
+
+Release operations pause writers before DB/uploads backup, then update/build,
+validate settings, migrate, validate Caddy, start, readiness and HTTPS smoke.
+Migration failures leave the API stopped. Keep previous ref/env/backup privately;
+rollback restores matching code/data rather than automatically downgrading schemas.
+pg_restore clean cannot universally remove new-schema objects: failed schema
+rollback remains an explicit operator recovery into a separate DB.
+
+The native Linux drill generates synthetic env, resolves/checks all five unique
+volumes and mounts before restore/cleanup, verifies changed DB rows/uploads,
+real restore, newest retention and preservation of every pre-existing volume.
+Existing E2E scenarios gain opt-in isolated PostgreSQL/Caddy local-CA HTTPS mode,
+with test-only transport faults/provider fixtures and PostgreSQL/CPU/RSS reports.
+Test-mode certificates/source relaxation do not prove production auth/ACME;
+retain exact public/production/device/provider gates in DEPLOYMENT.md. Docker/VPS
+are unavailable here; task 034 stays pending until the target Linux restore and
+all runtime acceptance criteria actually pass. No new production service/broker.
+
 ## 033 — Real application E2E with the existing Playwright browser stack
 
 Use Playwright/Chromium (installed Edge on Windows) and a single `npm run test:e2e`

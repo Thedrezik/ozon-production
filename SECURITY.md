@@ -93,8 +93,9 @@ issues remain within the reviewed scope. Launch verification below is still requ
    login sees the proxy peer: the aggregate 60 attempts/15 minutes is shared by
    users behind it; per-username limit is 5/15 minutes and clears on success.
    Tune only with measured production usage; no new distributed limiter is added.
-5. On the target host run `docker compose up -d --build`, then
-   `docker compose exec backend alembic upgrade head`, inspect `docker compose ps`,
+5. On the target host use the standalone production flow in
+   [DEPLOYMENT.md](docs/DEPLOYMENT.md) via `scripts/production.sh`: backup before
+   update, validate settings and migrate before starting backend/proxy. Inspect status,
    `/api/health`, `/api/health/ready`, HTTPS redirect/certificate, headers on success
    and errors, and absence of API docs, stack traces and credential leakage.
    Check backend Host against APP_PUBLIC_URL; direct health checks must use that Host.

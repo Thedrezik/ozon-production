@@ -90,6 +90,28 @@ synthetic test accounts/data; keep them out of Git. View a failure trace with
 
 ## Verification boundary for task 034
 
+Task 034 adds the opt-in native Linux container runner:
+
+```sh
+E2E_CONTAINER=true E2E_PROBE=true npm run test:e2e
+```
+
+It reuses every scenario against fresh PostgreSQL/backend/Caddy/PWA volumes,
+validates mounts before startup/cleanup and rejects non-empty databases. Test-only
+fault proxy handles outage/SSE/claim barriers; only the external adapter and local
+webhook-source check are relaxed in fixtures. Caddy serves actual static assets
+over local internal-CA HTTPS. Certificate verification is disabled only in this
+generated loopback fixture, APP_ENV=test retains development cookie semantics;
+public TLS/Secure cookies and unmodified production source protection require the
+separate launch checks in [DEPLOYMENT.md](DEPLOYMENT.md).
+
+E2E_PROBE writes synthetic actual-query EXPLAIN ANALYZE/index/migration/concurrency,
+DB connections, Docker CPU/cgroup memory and per-process RSS reports to ignored
+deployment-results. Fixtures are small and do not establish realistic VPS capacity.
+This runner is implemented but **not executed here**, because supported Docker
+daemon access is unavailable. Run it on a Linux test host with enough build/browser
+memory; the mandatory restore drill must also run on the actual target VPS.
+
 Docker is not available in the task 033 agent environment. Local E2E executes the
 real application and migrations with SQLite, not PostgreSQL/Caddy. Task 034 must
 repeat the workflows against an isolated Docker Compose environment on Linux,

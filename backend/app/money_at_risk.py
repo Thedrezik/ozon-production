@@ -76,7 +76,10 @@ def aggregate(rows: Iterable[tuple[dict, tuple[TariffStep, ...], dict]], now: da
                 del bucket["orders"][order_limit:]
 
     for order, steps, priority in rows:
-        if order["internal_status"] in ("DONE", "CANCELLED", "HANDED_TO_SHIPPING") or not steps:
+        if order["internal_status"] in ("DONE", "CANCELLED", "HANDED_TO_SHIPPING"):
+            continue
+        if not steps:
+            unknown_count += 1
             continue
         tariff = evaluate_tariff(steps, now)
         current = tariff["current"]

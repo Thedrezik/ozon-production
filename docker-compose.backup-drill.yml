@@ -1,5 +1,13 @@
 # Compose overlay for isolated backup/restore drills. Set DRILL_VOLUME_PREFIX
 # to a fresh unique value before every drill. Never reuse production volume names.
+services:
+  postgres:
+    memswap_limit: 320m
+  backend:
+    image: ${DRILL_BACKEND_IMAGE:-ozon-backend-drill:local}
+    memswap_limit: 512m
+  caddy:
+    memswap_limit: 128m
 volumes:
   postgres_data:
     name: ${DRILL_VOLUME_PREFIX:?Set DRILL_VOLUME_PREFIX}_postgres_data

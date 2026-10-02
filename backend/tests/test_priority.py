@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from test_orders import login, setup_app
 
-from app.models import AuditLog, Order, ProductProductionProfile
+from app.models import AuditLog, Order, Permission, ProductProductionProfile, Role
 from app.orders import seed_mock_orders
 from app.priority import PriorityInput, PriorityWeights, evaluate, sort_key
 
@@ -102,3 +102,31 @@ def test_queue_priority_override_settings_and_permissions(tmp_path):
     with Session(app.state.engine) as db:
         assert db.scalar(select(AuditLog).where(AuditLog.action == "order.priority_changed"))
         assert db.scalar(select(AuditLog).where(AuditLog.action == "priority.settings_changed"))
+
+
+def test_p4_queue_filter_and_priority_response_finance_permission(tmp_path):
+    app = setup_app(tmp_path)
+    with Session(app.state.engine) as db:
+        seed_mock_orders(db)
+        order_id = db.scalar(select(Order.id).where(Order.posting_number == "MOCK-NEAR-DEADLINE"))
+        role = db.scalar(select(Role).where(Role.name == "VIEWER"))
+        role.permissions.append(db.scalar(select(Permission).where(Permission.name == "orders.change_priority")))
+        db.commit()
+    with TestClient(app) as admin:
+        headers = login(admin)
+        admin.post("/api/users", headers=headers, json={"username": "dispatcher", "display_name": "Dispatcher",
+                   "password": "dispatcher-password-123", "roles": ["VIEWER"]})
+        with TestClient(app) as dispatcher:
+            limited_headers = login(dispatcher, "dispatcher", "dispatcher-password-123")
+            response = dispatcher.put(f"/api/orders/{order_id}/priority", headers=limited_headers,
+                                      json={"level": "P4", "pinned": False})
+            assert response.status_code == 200
+            assert response.json()["priority"]["financial_impact"] is None
+            assert all("₽" not in reason for reason in response.json()["priority"]["reasons"])
+            filtered = dispatcher.get("/api/orders?priority_level=P4")
+            assert filtered.status_code == 200
+            assert order_id in {row["id"] for row in filtered.json()["items"]}
+            assert all(row["priority"]["level"] == "P4" for row in filtered.json()["items"])
+        response = admin.put(f"/api/orders/{order_id}/priority", headers=headers,
+                             json={"level": "P1", "pinned": False})
+        assert response.json()["priority"]["financial_impact"] is not None

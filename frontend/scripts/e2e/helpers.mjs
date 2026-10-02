@@ -21,6 +21,7 @@ export async function until(check, description, timeout = 15000) {
 }
 
 export async function environment() {
+  if (process.env.E2E_CONTAINER === 'true') return (await import('./container.mjs')).containerEnvironment()
   const directory = await mkdtemp(join(tmpdir(), 'ozon-e2e-'))
   const reserve = createServer()
   await new Promise(resolve => reserve.listen(0, '127.0.0.1', resolve))

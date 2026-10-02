@@ -1,5 +1,16 @@
 # Backup and restore
 
+For task 034 production deployments use `bash scripts/production.sh backup` and
+`bash scripts/production.sh restore BACKUP_FILENAME`; they explicitly select the
+production Compose/private env/project and pause API/proxy writers. Backup/restore
+leave the app stopped; verify the archive/data, then `production.sh start`.
+Direct commands below otherwise default to the development Compose file. To use
+the underlying scripts directly in production, export COMPOSE_FILE=
+`docker-compose.production.yml`, APP_ENV_FILE/COMPOSE_ENV_FILES=`.env.production`
+and COMPOSE_PROJECT_NAME=`ozon-production`; pause writers and use
+BACKUP_STOPPED_BACKEND=true for backup while the backend is stopped.
+See [production runbook](docs/DEPLOYMENT.md) for update/rollback and launch gates.
+
 Compose already mounts the persistent `uploads` and `backups` volumes in the backend at `/data/uploads` and `/data/backups`. Backup archives contain a PostgreSQL custom-format dump, a gzip tar archive of the contents of `/data/uploads`, and a small manifest. Configuration files such as `.env` and external encryption keys are not archived. The complete database dump naturally includes stored password hashes and encrypted credential records; treat backups as private data and retain the credentials master key separately so restored encrypted records can be read. Archives are timestamped in UTC as `backup-YYYYMMDDTHHMMSSZ.tar.gz` and are mode-restricted when written.
 
 Run commands from the repository root on the server. Ensure Compose is using the intended project and `.env` file; scripts never print environment values. Restore uses short-lived `docker compose run` containers to access the existing backend volumes, so the API backend can remain stopped throughout the operation.
@@ -17,10 +28,10 @@ The script checks its required local tools, streams `pg_dump` from the PostgreSQ
 For cron, add an entry for the deployment user (adjust the absolute checkout path):
 
 ```cron
-15 2 * * * cd /opt/ozon-production && /usr/bin/flock -n /tmp/ozon-backup.lock /usr/bin/bash scripts/backup.sh >> /var/log/ozon-backup.log 2>&1
+15 2 * * * cd /opt/ozon-production && /usr/bin/bash scripts/production.sh backup && /usr/bin/bash scripts/production.sh start
 ```
 
-For a systemd timer, create a oneshot service with `WorkingDirectory=/opt/ozon-production` and `ExecStart=/usr/bin/bash scripts/backup.sh`; pair it with a timer using `OnCalendar=daily` and `Persistent=true`, then enable the timer. Keep the service's user and environment access consistent with the deployment's Docker Compose permissions. Review scheduler logs and alert on nonzero exits.
+For a systemd timer, create a oneshot service with `WorkingDirectory=/opt/ozon-production`, `ExecStart=/usr/bin/bash scripts/production.sh backup` and `ExecStartPost=/usr/bin/bash scripts/production.sh start`; pair it with a timer using `OnCalendar=daily` and `Persistent=true`, then enable the timer. Schedule the short write outage in a maintenance window; keep the backend stopped on backup failure. Keep the service's user and environment access consistent with the deployment's Docker Compose permissions. Review scheduler logs and alert on nonzero exits. The wrapper already uses flock for production operations.
 
 ## Check a backup
 
@@ -76,6 +87,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-backup-drill-
 ```
 
 ## Mandatory Linux VPS restore check — task 034
+
+Task 034 now supplies the native Linux automated command:
+
+```sh
+bash scripts/backup-restore-drill.sh
+```
+
+It generates synthetic env and fresh explicit volumes, validates resolved mounts
+and project before restore/cleanup, runs real scripts, verifies post-backup row/file
+removal and exact newest retention, and compares all pre-existing volume metadata
+after cleanup. It is not run in this agent environment; **launch gate still open**.
+Capture its exit code/output and record evidence in DEPLOYMENT.md/STATE.md on VPS.
+On the dedicated 1 CPU / 1 GB target, preload the backend release image on the
+host and run `DRILL_BACKEND_IMAGE=ozon-backend:RELEASE_SHA bash scripts/backup-restore-drill.sh`
+before production startup (or while the production stack is stopped). The runner
+verifies that image is present, skips build and still uses isolated synthetic env
+and volumes. Sharing a read-only release image never shares operational data.
 
 Before production launch, task 034 **must** run and document a complete destructive `backup → modify → restore → verify` drill on the target Linux VPS with the actual Bash scripts. Use synthetic data, a separate Compose project and explicit unique PostgreSQL/uploads/backups volume names; check `docker compose config` before restore and cleanup. Never run the drill against operational data. A project name alone cannot isolate explicitly named production volumes.
 

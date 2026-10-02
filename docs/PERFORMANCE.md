@@ -58,8 +58,13 @@ reads while retaining unique-key race protection and closed-task decisions.
 ## Memory and production defaults
 
 Compose runtime hard caps: PostgreSQL **256 MiB**, backend **384 MiB**, Caddy
-**96 MiB**, total **736 MiB**, leaving approximately 288 MiB of a 1 GiB host for
-Linux/Docker/other overhead. These caps require verification on the actual host;
+**96 MiB**, total **736 MiB**. Dedicated production minimum: **1 CPU / 1 GB RAM**,
+leaving approximately 218 MiB (decimal 1 GB) or 288 MiB (1 GiB) before kernel/host
+overhead. Production explicitly limits RAM+swap to 320/512/128 MiB respectively:
+at most 64/128/32 MiB swap, total 224 MiB. Recommend a 1 GiB host swap emergency
+buffer with swappiness=10, not as added working RAM. Keep all functions; future
+lightweight review is outside task 034. See DEPLOYMENT.md for safe host commands.
+These caps require verification on the actual host;
 do not confuse caps with measured container consumption. CPU quotas are 0.75,
 0.75, 0.25 respectively, shared on the one CPU, not CPU reservations. Each service
 has a 100-process/thread cap. No runtime Node/Vite server is deployed.
@@ -155,8 +160,11 @@ responsive API during slow reconciliation. No live account testing.
 
 Docker executable is unavailable here. Required target-host checks:
 
-1. `docker compose up -d --build`, explicit `docker compose exec backend alembic upgrade head`,
-   `docker compose ps`, HTTPS `/api/health` and `/api/health/ready`.
+1. Follow [DEPLOYMENT.md](DEPLOYMENT.md) and `scripts/production.sh`: explicit
+   backup/update/migration before API startup, status, HTTPS `/api/health` and
+   `/api/health/ready`. Opt-in `E2E_CONTAINER=true E2E_PROBE=true npm run test:e2e`
+   produces isolated PostgreSQL plans/concurrency/CPU/memory/RSS reports on Linux;
+   this runtime-unverified runner uses small fixtures, not realistic capacity data.
 2. `docker stats --no-stream`, host available memory/swap and OOM/restart counts
    during idle, synthetic requests, parallel browsers/SSE and uploads. Repeat with
    real phone JPEG/PNG/WebP within limits. Verify p95 latency at actual concurrency.

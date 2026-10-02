@@ -30,7 +30,7 @@ from app.models import (
 )
 from app.orders import STATUSES, TRANSITIONS, transition
 from app.performance import MAX_OFFSET, order_batches
-from app.priority import PriorityInput, PriorityWeights, evaluate, sort_key
+from app.priority import LEVELS, PriorityInput, PriorityWeights, evaluate, sort_key
 from app.rbac import user_permissions
 from app.tariff import evaluate as evaluate_tariff
 from app.tariff import parse_normalized_steps
@@ -129,6 +129,14 @@ def tariff_for(order: Order, now) -> dict | None:
     return evaluate_tariff(parse_normalized_steps(order.tariff_steps), now)
 
 
+def visible_priority(priority: dict, can_view_finance: bool) -> dict:
+    if can_view_finance:
+        return priority
+    return {**priority, "financial_impact": None,
+            "reasons": [reason for reason in priority["reasons"]
+                        if not reason.startswith(("Подтверждённый эффект тарифа:", "Стоимость заказа:"))]}
+
+
 def production_profiles(db: Db, orders=None) -> dict[tuple[str, str], ProductProductionProfile]:
     query = select(ProductProductionProfile)
     if orders is not None:
@@ -211,7 +219,7 @@ def list_orders(
 ) -> dict:
     if status is not None and status not in STATUSES:
         raise HTTPException(422, "Unknown status")
-    if priority_level is not None and priority_level not in ("P0", "P1", "P2", "P3"):
+    if priority_level is not None and priority_level not in LEVELS:
         raise HTTPException(422, "Unknown priority level")
     if not 1 <= limit <= 100 or not 0 <= offset <= MAX_OFFSET:
         raise HTTPException(422, "Invalid pagination")
@@ -272,12 +280,6 @@ def list_orders(
     ranked = [(orders[order_id], priority) for _, order_id, priority in selected if order_id in orders]
     profile_map = production_profiles(db, orders.values())
     can_view_finance = "finance.view" in user_permissions(_actor)
-    def visible_priority(priority):
-        if can_view_finance:
-            return priority
-        return {**priority, "financial_impact": None,
-                "reasons": [reason for reason in priority["reasons"]
-                            if not reason.startswith(("Подтверждённый эффект тарифа:", "Стоимость заказа:"))]}
     def visible_tariff(order):
         tariff = tariff_for(order, now)
         if tariff is None or can_view_finance:
@@ -290,7 +292,7 @@ def list_orders(
                 "current_tariff_cost": None, "next_tariff_cost": None,
                 "delta_to_next_tariff": None, "potential_saving": None, "potential_loss": None}
 
-    return {"items": [order_data(order, profile_map, visible_priority(priority), visible_tariff(order))
+    return {"items": [order_data(order, profile_map, visible_priority(priority, can_view_finance), visible_tariff(order))
                       for order, priority in ranked],
             "total": total}
 
@@ -406,7 +408,8 @@ def set_priority_override(order_id: int, payload: PriorityOverrideInput, db: Db,
     request.app.state.order_events.publish(order_id)
     loaded = db.scalar(order_query().where(Order.id == order_id))
     profiles = production_profiles(db, [loaded])
-    return order_data(loaded, profiles, priority_for(loaded, profiles, priority_settings(db), utc_now()))
+    priority = priority_for(loaded, profiles, priority_settings(db), utc_now())
+    return order_data(loaded, profiles, visible_priority(priority, "finance.view" in user_permissions(actor)))
 
 
 @router.get("/events")
