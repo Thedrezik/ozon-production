@@ -1,5 +1,34 @@
 # Architecture Decisions
 
+## 032 — Measured bounds for the single small VPS
+
+Keep one backend worker, the 2+1 DB pool and existing sequential Ozon scheduler/
+posting lock. No broker/cache or persisted priority scores. Confirmed dashboard
+N+1 (4,039 queries for 2,007 synthetic orders) is fixed by committing before
+projection reads, SQL status/workload groups and a shared streamed priority/risk
+pass. Keyset batches of 250 with batch-specific profiles bound ORM memory; exact
+queue ranking retains only top offset+limit identities and reloads the page.
+Summaries retain no risk identities; drill-down remains exact with bounded rows.
+Default queue excludes terminal production history; explicit filters/IDs retain
+archive access. Timeline pagination happens in SQL before loading display rows.
+Overdue procurement sources and their Manager Tasks are prefetched per batch;
+repeat manager-page reads preserve deduplication without a per-source SELECT.
+
+Set Compose caps PostgreSQL/backend/Caddy 256/384/96 MiB and PostgreSQL 20
+connections, 64MB shared buffers, 2MB work memory, no parallel query workers.
+Bound pool wait to 3 seconds, SSE to 100 subscribers/two emissions per second,
+and release its DB connection before streaming. Keep uploads serialized; resize
+before conversion and JPEG draft decoding. Measured WebP decoder memory requires
+a 10 MP WebP cap checked before decoder construction; JPEG/PNG retain 20 MP.
+Add six list/history/delivery indexes in migration `0023_performance`.
+
+Application benchmarks are SQLite/Windows comparisons, not VPS guarantees.
+Python request memory remains about 3–4 MiB at 10,007 orders; exact complex
+priority/tariff evaluation still scales linearly with active orders. Frontend
+build uses about 428 MiB; prefer image builds off the running VPS. Container RSS,
+PostgreSQL plans, real concurrency/phone images and target startup remain deployment
+checks because Docker is unavailable here. See [measurements and runbook](PERFORMANCE.md).
+
 ## 031 — Harden the existing session and single-proxy deployment
 
 Keep server-side opaque sessions, per-session CSRF, backend RBAC, encrypted Ozon

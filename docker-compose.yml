@@ -1,6 +1,11 @@
 services:
   postgres:
     image: postgres:17-alpine
+    mem_limit: 256m
+    cpus: 0.75
+    pids_limit: 100
+    shm_size: 64m
+    command: ["postgres", "-c", "max_connections=20", "-c", "shared_buffers=64MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=32MB", "-c", "effective_cache_size=256MB", "-c", "max_parallel_workers_per_gather=0", "-c", "max_parallel_workers=0"]
     environment:
       POSTGRES_DB: ozon
       POSTGRES_USER: ozon
@@ -16,6 +21,9 @@ services:
 
   backend:
     build: ./backend
+    mem_limit: 384m
+    cpus: 0.75
+    pids_limit: 100
     env_file: .env
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
@@ -27,13 +35,23 @@ services:
       - uploads:/data/uploads
       - backups:/data/backups
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/api/health', headers={'Host': os.environ.get('DOMAIN', 'localhost')}), timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
 
   caddy:
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 100
     build:
       context: .
       dockerfile: deployment/Caddy.Dockerfile
     environment:
       DOMAIN: ${DOMAIN:-:80}
+      GOMEMLIMIT: 64MiB
     ports:
       - "80:80"
       - "443:443"

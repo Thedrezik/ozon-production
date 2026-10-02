@@ -22,11 +22,13 @@ STATUSES = ACTIVE_STATUSES | {"RESOLVED", "DISMISSED"}
 
 
 def ensure_task(db: Session, *, source_type: str, source_id: int, order_id: int | None,
-                title: str, description: str, severity: str, due_at=None) -> ManagerTask:
+                title: str, description: str, severity: str, due_at=None,
+                prefetched: dict[int, ManagerTask] | None = None) -> ManagerTask:
     if source_type not in SOURCE_TYPES or severity not in SEVERITIES or source_id < 1:
         raise ValueError("Invalid manager task source or severity")
-    task = db.scalar(select(ManagerTask).where(ManagerTask.source_type == source_type,
-                                                ManagerTask.source_id == source_id))
+    task = (prefetched.get(source_id) if prefetched is not None else
+            db.scalar(select(ManagerTask).where(ManagerTask.source_type == source_type,
+                                               ManagerTask.source_id == source_id)))
     if task is None:
         task = ManagerTask(source_type=source_type, source_id=source_id, order_id=order_id,
                            title=title, description=description, severity=severity,
@@ -56,7 +58,7 @@ def resolve_source(db: Session, *, source_type: str, source_id: int) -> ManagerT
 
 def sync_rule(db: Session, *, active: bool, source_type: str, source_id: int,
               order_id: int | None, title: str, description: str,
-              severity: str, due_at=None) -> ManagerTask | None:
+              severity: str, due_at=None, prefetched: dict[int, ManagerTask] | None = None) -> ManagerTask | None:
     """Apply one evaluated rule inside the caller's transaction.
 
     Integration and scheduler callers evaluate their own source data, then call this
@@ -65,5 +67,5 @@ def sync_rule(db: Session, *, active: bool, source_type: str, source_id: int,
     if active:
         return ensure_task(db, source_type=source_type, source_id=source_id,
                            order_id=order_id, title=title, description=description,
-                           severity=severity, due_at=due_at)
+                           severity=severity, due_at=due_at, prefetched=prefetched)
     return resolve_source(db, source_type=source_type, source_id=source_id)

@@ -33,8 +33,8 @@ def list_notifications(db: Db, current: Current, request: Request, limit: int = 
     if not 1 <= limit <= 100 or offset < 0:
         raise HTTPException(422, "Invalid pagination")
     user, _ = current
-    if ({role.name for role in user.roles} & set(ADMIN_ROLES)
-            and sync_deadline_notifications(db, request.app.state.settings.organization_timezone)):
+    if {role.name for role in user.roles} & set(ADMIN_ROLES):
+        sync_deadline_notifications(db, request.app.state.settings.organization_timezone)
         db.commit()
     query = select(Notification).where(Notification.user_id == user.id)
     if unread_only:

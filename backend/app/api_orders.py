@@ -1,4 +1,5 @@
 import asyncio
+import heapq
 from datetime import timezone
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -6,7 +7,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import String, cast, func, literal, or_, select, union_all
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.auth import Current, Db, require
@@ -28,6 +29,7 @@ from app.models import (
     utc_now,
 )
 from app.orders import STATUSES, TRANSITIONS, transition
+from app.performance import MAX_OFFSET, order_batches
 from app.priority import PriorityInput, PriorityWeights, evaluate, sort_key
 from app.rbac import user_permissions
 from app.tariff import evaluate as evaluate_tariff
@@ -127,8 +129,14 @@ def tariff_for(order: Order, now) -> dict | None:
     return evaluate_tariff(parse_normalized_steps(order.tariff_steps), now)
 
 
-def production_profiles(db: Db) -> dict[tuple[str, str], ProductProductionProfile]:
-    profiles = db.scalars(select(ProductProductionProfile)).all()
+def production_profiles(db: Db, orders=None) -> dict[tuple[str, str], ProductProductionProfile]:
+    query = select(ProductProductionProfile)
+    if orders is not None:
+        offers = {item.offer_id for order in orders for item in order.items if item.offer_id}
+        skus = {item.sku for order in orders for item in order.items if item.sku}
+        query = query.where(or_(ProductProductionProfile.offer_id.in_(offers),
+                               ProductProductionProfile.sku.in_(skus)))
+    profiles = db.scalars(query).all()
     return {(key, value): profile for profile in profiles
             for key, value in (("offer_id", profile.offer_id), ("sku", profile.sku)) if value}
 
@@ -200,12 +208,14 @@ def list_orders(
         raise HTTPException(422, "Unknown status")
     if priority_level is not None and priority_level not in ("P0", "P1", "P2", "P3"):
         raise HTTPException(422, "Unknown priority level")
-    if not 1 <= limit <= 100 or offset < 0:
+    if not 1 <= limit <= 100 or not 0 <= offset <= MAX_OFFSET:
         raise HTTPException(422, "Invalid pagination")
     query = select(Order)
     # Exact lookup and explicit cancellation filters retain access to the archive.
     if order_id is None and ozon_status != "cancelled" and status != "CANCELLED":
         query = query.where(Order.ozon_status != "cancelled")
+    if order_id is None and status is None and ozon_status is None:
+        query = query.where(Order.internal_status.notin_(("DONE", "CANCELLED", "HANDED_TO_SHIPPING")))
     if order_id is not None:
         query = query.where(Order.id == order_id)
     if status:
@@ -236,18 +246,26 @@ def list_orders(
                                     OrderItem.sku.ilike(term), OrderItem.offer_id.ilike(term),
                                     OrderItem.product_name.ilike(term))))))
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
-    ids = db.scalars(query.with_only_columns(Order.id)).all()
-    if not ids:
+    if not total:
         return {"items": [], "total": total}
-    orders = db.scalars(order_query().where(Order.id.in_(ids))).all()
-    profile_map = production_profiles(db)
     settings = priority_settings(db)
     now = utc_now()
-    ranked = [(order, priority_for(order, profile_map, settings, now)) for order in orders]
-    if priority_level is not None:
-        ranked = [pair for pair in ranked if pair[1]["level"] == priority_level]
-        total = len(ranked)
-    ranked.sort(key=lambda pair: sort_key(pair[1], pair[0].id))
+    matches = 0
+    def candidates():
+        nonlocal matches
+        for batch in order_batches(db, query):
+            profile_map = production_profiles(db, batch)
+            for order in batch:
+                priority = priority_for(order, profile_map, settings, now)
+                if priority_level is None or priority["level"] == priority_level:
+                    matches += 1
+                    yield sort_key(priority, order.id), order.id, priority
+    selected = heapq.nsmallest(offset + limit, candidates(), key=lambda row: row[0])[offset:]
+    total = matches
+    orders = {order.id: order for order in db.scalars(order_query().where(
+        Order.id.in_([row[1] for row in selected])))}
+    ranked = [(orders[order_id], priority) for _, order_id, priority in selected if order_id in orders]
+    profile_map = production_profiles(db, orders.values())
     can_view_finance = "finance.view" in user_permissions(_actor)
     def visible_priority(priority):
         if can_view_finance:
@@ -268,7 +286,7 @@ def list_orders(
                 "delta_to_next_tariff": None, "potential_saving": None, "potential_loss": None}
 
     return {"items": [order_data(order, profile_map, visible_priority(priority), visible_tariff(order))
-                      for order, priority in ranked[offset:offset + limit]],
+                      for order, priority in ranked],
             "total": total}
 
 
@@ -382,17 +400,22 @@ def set_priority_override(order_id: int, payload: PriorityOverrideInput, db: Db,
     db.commit()
     request.app.state.order_events.publish(order_id)
     loaded = db.scalar(order_query().where(Order.id == order_id))
-    profiles = production_profiles(db)
+    profiles = production_profiles(db, [loaded])
     return order_data(loaded, profiles, priority_for(loaded, profiles, priority_settings(db), utc_now()))
 
 
 @router.get("/events")
-async def events(request: Request, _current: Current):
+async def events(request: Request, db: Db, _current: Current):
     user, _session = _current
     if "orders.view" not in user_permissions(user):
         raise HTTPException(403, "Permission denied")
     bus = request.app.state.order_events
-    queue = bus.subscribe()
+    # Authentication is complete. A 20-second stream must not occupy a DB slot.
+    db.close()
+    try:
+        queue = bus.subscribe()
+    except ValueError:
+        raise HTTPException(503, "Event stream capacity reached", headers={"Retry-After": "5"}) from None
 
     async def stream():
         deadline = asyncio.get_running_loop().time() + 20
@@ -407,6 +430,8 @@ async def events(request: Request, _current: Current):
                 except TimeoutError:
                     break  # Reconnect through auth to pick up role/session changes.
                 yield f"event: orders\ndata: {order_id}\n\n"
+                # Coalesce bursts without extending the authentication deadline.
+                await asyncio.sleep(min(0.5, max(0, deadline - asyncio.get_running_loop().time())))
         finally:
             bus.unsubscribe(queue)
 
@@ -414,10 +439,14 @@ async def events(request: Request, _current: Current):
 
 
 @router.get("/{order_id}/history")
-def history(order_id: int, db: Db, _actor: Annotated[User, Depends(require("orders.view"))]) -> list[dict]:
+def history(order_id: int, db: Db, _actor: Annotated[User, Depends(require("orders.view"))],
+            limit: int = 200, offset: int = 0) -> list[dict]:
+    if not 1 <= limit <= 200 or not 0 <= offset <= MAX_OFFSET:
+        raise HTTPException(422, "Invalid pagination")
     if db.get(Order, order_id) is None:
         raise HTTPException(404, "Order not found")
-    rows = db.scalars(select(StatusHistory).where(StatusHistory.order_id == order_id).order_by(StatusHistory.id)).all()
+    rows = db.scalars(select(StatusHistory).where(StatusHistory.order_id == order_id)
+                      .order_by(StatusHistory.id).limit(limit).offset(offset)).all()
     return [{"old_status": row.old_status, "new_status": row.new_status,
              "changed_at": row.changed_at, "changed_by": row.changed_by} for row in rows]
 
@@ -427,15 +456,29 @@ def timeline(order_id: int, db: Db, _actor: Annotated[User, Depends(require("ord
              limit: int = 100, offset: int = 0) -> dict:
     if db.get(Order, order_id) is None:
         raise HTTPException(404, "Order not found")
-    if not 1 <= limit <= 200 or offset < 0:
+    if not 1 <= limit <= 200 or not 0 <= offset <= MAX_OFFSET:
         raise HTTPException(422, "Invalid pagination")
+    identities = union_all(*[
+        select(model.id.label("row_id"), literal(kind).label("kind"),
+               timestamp.label("created_at"), (literal(prefix) + cast(model.id, String)).label("sort_id"))
+        .where(model.order_id == order_id)
+        for model, timestamp, kind, prefix in (
+            (Comment, Comment.created_at, "comment", "comment-"),
+            (StatusHistory, StatusHistory.changed_at, "status", "status-"),
+            (OrderTimelineEvent, OrderTimelineEvent.created_at, "event", "event-"))
+    ]).subquery()
+    total = db.scalar(select(func.count()).select_from(identities)) or 0
+    selected = db.execute(select(identities.c.row_id, identities.c.kind)
+        .order_by(identities.c.created_at, identities.c.sort_id).offset(offset).limit(limit)).all()
+    ids = {kind: [row_id for row_id, row_kind in selected if row_kind == kind]
+           for kind in ("comment", "status", "event")}
     comments = db.scalars(select(Comment).options(joinedload(Comment.author), selectinload(Comment.mentions))
-                          .where(Comment.order_id == order_id).order_by(Comment.created_at, Comment.id)).all()
+                          .where(Comment.id.in_(ids["comment"]))).all()
     statuses = db.scalars(select(StatusHistory).options(joinedload(StatusHistory.changed_by_user))
-                          .where(StatusHistory.order_id == order_id)).all()
+                          .where(StatusHistory.id.in_(ids["status"]))).all()
     status_labels = {row.name: row.display_name for row in db.scalars(select(InternalStatus)).all()}
     events = db.scalars(select(OrderTimelineEvent).options(joinedload(OrderTimelineEvent.actor))
-                        .where(OrderTimelineEvent.order_id == order_id)).all()
+                        .where(OrderTimelineEvent.id.in_(ids["event"]))).all()
     items = [
         {"id": f"comment-{row.id}", "kind": "comment", "body": row.body,
          "author": row.author.display_name if row.author else "Удалённый пользователь",
@@ -452,8 +495,7 @@ def timeline(order_id: int, db: Db, _actor: Annotated[User, Depends(require("ord
          "created_at": row.created_at, "mention_user_ids": []} for row in events
     ]
     items.sort(key=lambda item: (item["created_at"], item["id"]))
-    total = len(items)
-    return {"items": items[offset:offset + limit], "total": total}
+    return {"items": items, "total": total}
 
 
 @router.post("/{order_id}/comments", status_code=201)
@@ -498,7 +540,8 @@ def claim(order_id: int, db: Db, actor: Annotated[User, Depends(require("orders.
     db.add(AuditLog(actor_user_id=actor.id, action="order.claimed", detail=order.posting_number))
     db.commit()
     request.app.state.order_events.publish(order_id)
-    return order_data(db.scalar(order_query().where(Order.id == order_id)), production_profiles(db))
+    loaded = db.scalar(order_query().where(Order.id == order_id))
+    return order_data(loaded, production_profiles(db, [loaded]))
 
 
 @router.put("/{order_id}/assignment")
@@ -529,7 +572,8 @@ def assign(order_id: int, payload: AssignmentInput, db: Db, request: Request,
     db.add(AuditLog(actor_user_id=actor.id, action="order.assigned", detail=order.posting_number))
     db.commit()
     request.app.state.order_events.publish(order_id)
-    return order_data(db.scalar(order_query().where(Order.id == order_id)), production_profiles(db))
+    loaded = db.scalar(order_query().where(Order.id == order_id))
+    return order_data(loaded, production_profiles(db, [loaded]))
 
 
 @router.post("/{order_id}/status")
@@ -558,4 +602,5 @@ def change_status(order_id: int, payload: StatusInput, db: Db, request: Request,
     db.add(AuditLog(actor_user_id=actor.id, action="order.status_changed", detail=order.posting_number))
     db.commit()
     request.app.state.order_events.publish(order_id)
-    return order_data(db.scalar(order_query().where(Order.id == order_id)), production_profiles(db))
+    loaded = db.scalar(order_query().where(Order.id == order_id))
+    return order_data(loaded, production_profiles(db, [loaded]))

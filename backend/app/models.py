@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -472,3 +473,12 @@ class Photo(Base):
     width: Mapped[int] = mapped_column(Integer)
     height: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+Index("ix_notifications_user_created_id", Notification.user_id, Notification.created_at, Notification.id)
+Index("ix_delivery_due", NotificationDelivery.channel, NotificationDelivery.status,
+      NotificationDelivery.next_attempt_at, NotificationDelivery.id)
+Index("ix_audit_created_id", AuditLog.created_at, AuditLog.id)
+Index("ix_comments_order_created_id", Comment.order_id, Comment.created_at, Comment.id)
+Index("ix_history_order_changed_id", StatusHistory.order_id, StatusHistory.changed_at, StatusHistory.id)
+Index("ix_timeline_order_created_id", OrderTimelineEvent.order_id, OrderTimelineEvent.created_at, OrderTimelineEvent.id)

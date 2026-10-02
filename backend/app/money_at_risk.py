@@ -1,5 +1,7 @@
 """Aggregate confirmed tariff increases into disjoint time and risk groups."""
 
+from bisect import insort
+from collections.abc import Iterable
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -44,9 +46,10 @@ def _category(priority: dict) -> str:
     return "CAN_STILL_SAVE"
 
 
-def aggregate(rows: list[tuple[dict, tuple[TariffStep, ...], dict]], now: datetime,
+def aggregate(rows: Iterable[tuple[dict, tuple[TariffStep, ...], dict]], now: datetime,
               timezone_name: str, near_hours: int = 2,
-              cutoffs: tuple[int, ...] = (12, 16)) -> dict:
+              cutoffs: tuple[int, ...] = (12, 16), *, include_orders: bool = True,
+              order_limit: int | None = None, category_filter: str | None = None) -> dict:
     """Rows contain order identity, normalized tariff steps and evaluated priority.
 
     Each future increase above the previous high-water mark is counted once.
@@ -61,6 +64,17 @@ def aggregate(rows: list[tuple[dict, tuple[TariffStep, ...], dict]], now: dateti
                 "order_count": 0, "orders": []}
     category_amounts = {category: ZERO for category in CATEGORIES}
     unknown_count = 0
+
+    def add_entry(bucket, entry, category):
+        if category_filter is not None and category_filter != category:
+            return
+        bucket["amount"] += entry["amount"]
+        bucket["order_count"] += 1
+        if include_orders:
+            insort(bucket["orders"], entry, key=lambda row: (row["at"], row["id"]))
+            if order_limit is not None:
+                del bucket["orders"][order_limit:]
+
     for order, steps, priority in rows:
         if order["internal_status"] in ("DONE", "CANCELLED", "HANDED_TO_SHIPPING") or not steps:
             continue
@@ -75,14 +89,14 @@ def aggregate(rows: list[tuple[dict, tuple[TariffStep, ...], dict]], now: dateti
         if baseline.cost is not None and baseline.currency == "RUB":
             already = max(ZERO, current["cost"] - baseline.cost)
             if already:
-                degraded["orders"].append({**identity, "amount": already,
-                                            "at": current["starts_at"]})
-                degraded["amount"] += already
+                add_entry(degraded, {**identity, "amount": already,
+                                     "at": current["starts_at"]}, "ALREADY_DEGRADED")
                 category_amounts["ALREADY_DEGRADED"] += already
         else:
             unknown_count += 1
         high = current["cost"]
         category = _category(priority)
+        entries = {}
         for step in steps:
             if step.starts_at is None or step.starts_at <= now:
                 continue
@@ -97,16 +111,16 @@ def aggregate(rows: list[tuple[dict, tuple[TariffStep, ...], dict]], now: dateti
                            if bucket["starts_at"] < step.starts_at <= bucket["ends_at"]), None)
             if bucket is None:
                 continue
-            bucket["amount"] += increase
             category_amounts[category] += increase
-            existing = next((entry for entry in bucket["orders"] if entry["id"] == order["id"]), None)
+            existing = entries.get(bucket["key"])
             if existing:
                 existing["amount"] += increase
             else:
-                bucket["orders"].append({**identity, "amount": increase, "at": step.starts_at,
-                                         "category": category})
-    for bucket in [*buckets, degraded]:
-        bucket["order_count"] = len(bucket["orders"])
+                entries[bucket["key"]] = {**identity, "amount": increase, "at": step.starts_at,
+                                           "category": category}
+        for bucket in buckets:
+            if bucket["key"] in entries:
+                add_entry(bucket, entries[bucket["key"]], category)
     return {"timezone": timezone_name, "as_of": now, "total": sum((bucket["amount"] for bucket in buckets), ZERO),
             "already_degraded": degraded, "categories": category_amounts, "buckets": buckets,
             "unpriced_count": unknown_count}

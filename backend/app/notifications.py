@@ -2,7 +2,7 @@
 
 from datetime import timedelta, timezone
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -14,6 +14,7 @@ from app.models import (
     User,
     utc_now,
 )
+from app.performance import active_orders, order_batches
 
 TYPES = (
     "NEW_ORDER", "ORDER_CANCELLED", "TARIFF_DEADLINE", "SHIPMENT_DEADLINE",
@@ -33,7 +34,7 @@ def manager_ids(db: Session) -> list[int]:
 
 
 def emit(db: Session, *, type: str, event_key: str, user_ids: list[int],
-         title: str, body: str, url: str | None = None) -> int:
+         title: str, body: str, url: str | None = None, _context: dict | None = None) -> int:
     """Create one notification per recipient and source event in the caller's transaction.
 
     The database unique key is the final concurrency guard. Callers should emit only
@@ -41,13 +42,16 @@ def emit(db: Session, *, type: str, event_key: str, user_ids: list[int],
     """
     if type not in TYPES or not event_key or len(event_key) > 200:
         raise ValueError("Invalid notification event")
-    recipients = db.scalars(select(User).where(User.id.in_(set(user_ids)), User.is_active.is_(True))).all()
+    recipients = (_context["recipients"] if _context is not None else
+                  db.scalars(select(User).where(User.id.in_(set(user_ids)), User.is_active.is_(True))).all())
     ids = [user.id for user in recipients]
-    prefs = db.scalars(select(NotificationPreference).where(
+    prefs = [] if _context is not None else db.scalars(select(NotificationPreference).where(
         NotificationPreference.user_id.in_(ids), NotificationPreference.type == type
     )).all()
-    enabled = {(p.user_id, p.channel): p.enabled for p in prefs}
-    admin_ids = set(manager_ids(db)) if type in MANDATORY_ADMIN else set()
+    enabled = (_context["enabled"].get(type, {}) if _context is not None else
+               {(p.user_id, p.channel): p.enabled for p in prefs})
+    admin_ids = ((_context["admin_ids"] if _context is not None else set(manager_ids(db)))
+                 if type in MANDATORY_ADMIN else set())
     created = 0
     for user in recipients:
         mandatory = user.id in admin_ids
@@ -59,9 +63,10 @@ def emit(db: Session, *, type: str, event_key: str, user_ids: list[int],
         if not channels:
             continue
         key = f"{type}:{event_key}"
-        if db.scalar(select(Notification.id).where(
+        if (_context is not None and (user.id, key) in _context["existing"]) or (
+            _context is None and db.scalar(select(Notification.id).where(
             Notification.user_id == user.id, Notification.dedupe_key == key
-        )) is not None:
+        )) is not None):
             continue
         # Nested transaction preserves other changes if concurrent delivery won.
         from sqlalchemy.exc import IntegrityError
@@ -79,6 +84,8 @@ def emit(db: Session, *, type: str, event_key: str, user_ids: list[int],
         except IntegrityError:
             continue
         created += 1
+        if _context is not None:
+            _context["existing"].add((user.id, key))
     return created
 
 
@@ -101,12 +108,36 @@ def sync_deadline_notifications(db: Session, timezone_name: str) -> int:
     recipients = manager_ids(db)
     if not recipients:
         return 0
-    orders = db.scalars(select(Order).where(Order.internal_status.not_in(
-        ("DONE", "CANCELLED", "HANDED_TO_SHIPPING")), Order.ozon_status != "cancelled")).all()
-    profiles, settings = production_profiles(db), priority_settings(db)
+    users = db.scalars(select(User).where(User.id.in_(recipients), User.is_active.is_(True))).all()
+    prefs = db.scalars(select(NotificationPreference).where(NotificationPreference.user_id.in_(recipients))).all()
+    context = {"recipients": users, "admin_ids": set(recipients), "enabled": {}}
+    for pref in prefs:
+        context["enabled"].setdefault(pref.type, {})[(pref.user_id, pref.channel)] = pref.enabled
+    def candidates():
+        nonlocal profiles
+        for batch in order_batches(db, active_orders().where(or_(
+            Order.shipment_deadline <= now + timedelta(hours=2), Order.tariff_steps.is_not(None)))):
+            profiles = production_profiles(db, batch)
+            keys = set()
+            context["tariffs"] = {order.id: tariff_for(order, now) for order in batch}
+            for order in batch:
+                deadline = (order.shipment_deadline.replace(tzinfo=timezone.utc)
+                            if order.shipment_deadline.tzinfo is None else order.shipment_deadline)
+                if deadline <= now + timedelta(hours=2):
+                    kind = "ORDER_OVERDUE" if deadline <= now else "SHIPMENT_DEADLINE"
+                    keys.add(f"{kind}:order:{order.id}:{deadline.isoformat()}")
+                tariff = context["tariffs"][order.id]
+                next_step = tariff["next"] if tariff else None
+                if next_step and next_step["starts_at"] <= now + timedelta(hours=2):
+                    keys.add(f"TARIFF_DEADLINE:order:{order.id}:{next_step['starts_at'].isoformat()}")
+            context["existing"] = set(db.execute(select(Notification.user_id, Notification.dedupe_key)
+                .where(Notification.user_id.in_(recipients),
+                       Notification.dedupe_key.in_(keys))).all())
+            yield from batch
+    profiles, settings = {}, priority_settings(db)
     count = 0
     current_keys = set()
-    for order in orders:
+    for order in candidates():
         deadline = order.shipment_deadline.replace(tzinfo=timezone.utc) if order.shipment_deadline.tzinfo is None else order.shipment_deadline
         if deadline <= now:
             kind = "ORDER_OVERDUE"
@@ -120,8 +151,8 @@ def sync_deadline_notifications(db: Session, timezone_name: str) -> int:
                           user_ids=recipients, title=f"Заказ {order.posting_number}",
                           body="Срок отгрузки прошёл" if kind == "ORDER_OVERDUE" else
                           f"До отгрузки {int((deadline - now).total_seconds() // 60)} мин",
-                          url=f"/orders/{order.id}")
-        tariff = tariff_for(order, now)
+                          url=f"/orders/{order.id}", _context=context)
+        tariff = context["tariffs"][order.id]
         next_step = tariff["next"] if tariff else None
         if next_step and next_step["starts_at"] <= now + timedelta(hours=2):
             priority = priority_for(order, profiles, settings, now)
@@ -136,20 +167,24 @@ def sync_deadline_notifications(db: Session, timezone_name: str) -> int:
                           event_key=f"order:{order.id}:{next_step['starts_at'].isoformat()}",
                           user_ids=recipients, title=f"Тариф заказа {order.posting_number}",
                           body=f"Следующая ступень через {int((next_step['starts_at'] - now).total_seconds() // 60)} мин. {detail}",
-                          url=f"/orders/{order.id}")
+                          url=f"/orders/{order.id}", _context=context)
     # Preserve notices/receipts as history, but stop sending obsolete external alerts.
     pending_ids = select(NotificationDelivery.notification_id).where(NotificationDelivery.status == "PENDING")
-    notices = db.scalars(select(Notification).where(Notification.type.in_(
-        ("SHIPMENT_DEADLINE", "ORDER_OVERDUE", "TARIFF_DEADLINE")),
-        or_(Notification.read_at.is_(None), Notification.id.in_(pending_ids)))).all()
-    obsolete = {notice.id for notice in notices if notice.dedupe_key not in current_keys}
-    for notice in notices:
-        if notice.id in obsolete and notice.read_at is None:
-            notice.read_at = now
-    if obsolete:
-        deliveries = db.scalars(select(NotificationDelivery).where(
-            NotificationDelivery.notification_id.in_(obsolete),
-            NotificationDelivery.status == "PENDING").with_for_update()).all()
-        for delivery in deliveries:
-            delivery.status = "SKIPPED"
+    after = 0
+    while True:
+        notices = db.execute(select(Notification.id, Notification.dedupe_key).where(
+            Notification.id > after, Notification.type.in_(
+                ("SHIPMENT_DEADLINE", "ORDER_OVERDUE", "TARIFF_DEADLINE")),
+            or_(Notification.read_at.is_(None), Notification.id.in_(pending_ids)))
+            .order_by(Notification.id).limit(250)).all()
+        if not notices:
+            break
+        after = notices[-1].id
+        obsolete = [notice.id for notice in notices if notice.dedupe_key not in current_keys]
+        if obsolete:
+            db.execute(update(Notification).where(Notification.id.in_(obsolete),
+                       Notification.read_at.is_(None)).values(read_at=now))
+            db.execute(update(NotificationDelivery).where(
+                NotificationDelivery.notification_id.in_(obsolete),
+                NotificationDelivery.status == "PENDING").values(status="SKIPPED"))
     return count

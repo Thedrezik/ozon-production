@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AuditLog, BlockerType, Photo, User
 from app.orders import seed_mock_orders
+from app.photos import compress_image
 from app.storage import LocalStorage, Storage
 from tests.test_orders import login, setup_app
 
@@ -19,6 +20,44 @@ def image_bytes():
     output = BytesIO()
     Image.new("RGB", (2000, 1000), "red").save(output, format="PNG")
     return output.getvalue()
+
+
+@pytest.mark.parametrize("kind", [b"VP8 ", b"VP8L", b"VP8X"])
+def test_oversized_webp_rejected_before_decoder_allocates(monkeypatch, kind):
+    width, height = 5000, 3000
+    if kind == b"VP8 ":
+        payload = b"\x00" * 3 + b"\x9d\x01\x2a" + struct.pack("<HH", width, height)
+    elif kind == b"VP8L":
+        payload = b"\x2f" + struct.pack("<I", (width - 1) | ((height - 1) << 14))
+    else:
+        payload = b"\x00" * 4 + (width - 1).to_bytes(3, "little") + (height - 1).to_bytes(3, "little")
+    body = b"RIFF" + struct.pack("<I", 12 + len(payload)) + b"WEBP" + kind + struct.pack("<I", len(payload)) + payload
+    def no_decode(*_args, **_kwargs):
+        pytest.fail("Oversized WebP must be rejected before allocating its decoder")
+    monkeypatch.setattr(Image, "open", no_decode)
+    for mime in ("image/webp", "image/png"):
+        with pytest.raises(ValueError, match="10 million"):
+            compress_image(body, mime)
+
+
+@pytest.mark.parametrize("format_name,mime", [("JPEG", "image/jpeg"), ("PNG", "image/png"), ("WEBP", "image/webp")])
+def test_photo_resize_preserves_orientation_and_strips_metadata(format_name, mime):
+    source = BytesIO()
+    exif = Image.Exif()
+    exif[274] = 6
+    with Image.new("RGB", (2000, 1000), "red") as image:
+        image.save(source, format=format_name, exif=exif)
+    output, width, height = compress_image(source.getvalue(), mime)
+    assert (width, height) == (800, 1600)
+    with Image.open(BytesIO(output)) as result:
+        assert result.format == "JPEG" and not result.getexif()
+
+
+def test_lossless_webp_is_supported():
+    source = BytesIO()
+    with Image.new("RGBA", (100, 50), "blue") as image:
+        image.save(source, format="WEBP", lossless=True)
+    assert compress_image(source.getvalue(), "image/webp")[1:] == (100, 50)
 
 
 @pytest.fixture

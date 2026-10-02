@@ -4,6 +4,8 @@ Last updated: 2026-10-02
 
 ## Completed
 
+- Task 032: measured small-VPS performance; bounded queue/risk/profile/history reads, SQL dashboard counters/workload, shared risk pass, notification/procurement dedupe prefetch, SSE bounds/connection release, photo memory reduction, Compose limits and six indexes in `0023_performance`. Synthetic benchmarks up to 10,007 orders; see `PERFORMANCE.md`. No commit/push.
+
 - Task 031: security review and hardening of existing auth/RBAC/session, production config, headers/CSP, secret handling/logging, JSON/Telegram limits and SSE reauthentication. User-management row locks close promotion/last-super-admin races; SECURITY.md records controls and deployment gates. No commit/push.
 - Task 030: PostgreSQL/uploads backups, retention, guarded transactional DB restore, staged uploads restore, Linux operations guide and automated checks. Backup creation confirmed by user's real Docker run on Windows; final Linux restore drill is a mandatory task 034 production-launch gate.
 - Task 001: application bootstrap, database, PWA and local Compose checks.
@@ -45,13 +47,15 @@ Last updated: 2026-10-02
 
 ## Current
 
-- Task 031 completed. No known critical/high issues remain in the reviewed code/dependency set. Container/Caddy/PostgreSQL concurrency and real-provider checks remain deployment gates. Migration head: `0022_audit`; no schema change, commit or push.
+- Task 032 completed locally. Migration head: `0023_performance`. Container startup/RSS/CPU, PostgreSQL query plans and real VPS concurrency remain deployment checks; Docker is unavailable here. No commit/push.
 
 ## Next
 
-- Await a separate task request; task 032 has not been started. Task 034 must pass the mandatory isolated Linux VPS backup → modify → restore → verify gate before production launch.
+- Await a separate task request; task 033 has not been started. Task 034 must pass the mandatory isolated Linux VPS backup → modify → restore → verify gate before production launch.
 
 ## Known Issues
+
+- Performance numbers use Windows/SQLite synthetic data, not VPS guarantees. Exact priority/risk remains linear in active postings; native photo RSS and container quotas need Linux verification. WebP is limited to 10 MP after measured 20 MP decoder memory exceeded the 384 MiB backend cap; JPEG/PNG remain 20 MP. Prefer off-VPS image builds (local frontend build peak ~428 MiB). See `PERFORMANCE.md` for deployment checks.
 
 - Full PostgreSQL restore remains unverified on the target Linux VPS: mandatory task 034 launch gate. User's Windows Docker run confirmed unique isolated volumes, migrations, PostgreSQL/uploads archive creation, publication to /data/backups and isolated failure cleanup. Windows harness stopped at `Unexpected backup bundle members`; full Windows restore is non-authoritative because of PowerShell/Git Bash/MSYS compatibility. Docker/Caddy/shellcheck unavailable in the agent environment. Real Ozon connection/delivery remains an HTTPS deployment check.
 - Starlette emits a dependency deprecation warning about its TestClient/httpx integration; tests pass.
@@ -74,7 +78,7 @@ Last updated: 2026-10-02
 
 ## Last Tests
 
-- Task 031: full backend suite passed twice (245, then 250 tests). Final logging/security/audit/Ozon regressions: 90 passed; subsequent final auth/security/audit regressions including management locks: 57 passed. Ruff app/tests/Alembic, compileall and git diff --check passed. Existing Starlette/httpx and Alembic deprecation warnings remain.
-- Frontend lint/typecheck/build, offline snapshot and push-worker tests passed. Headless Edge against the actual production build passed React XSS escaping, deployed CSP inline-script rejection and backend-secret sentinel bundle scan.
-- pip-audit: no known vulnerabilities after fixing pip/pytest; pip check passed. npm audit: zero vulnerabilities (530 dependencies). No runtime or frontend upgrades required.
-- Docker/Caddy unavailable: no Compose up/build, container migrations/ps, live PostgreSQL locks/trigger, container health/readiness or edge-header/debug-leak verification. Local health/readiness/config/header/error tests passed. Task 030 Linux restore remains the task 034 launch gate.
+- Task 032: full backend suite 271 passed (earlier complete runs: 263 and 270 passed). Final targeted performance/SSE regressions and notification preference/deduplication checks passed. Existing Starlette/httpx and Alembic deprecation warnings remain.
+- Ruff app/tests/Alembic and runtime profiler, compileall, frontend lint/typecheck/build, Compose YAML/resource static validation and git diff --check passed. Initial sandbox esbuild access error was resolved by the approved build outside the sandbox.
+- Synthetic API benchmarks: 2,007 and 10,007 orders, query counts and Python memory; normal 10,007-order queue/dashboard/risk requests ~0.49/0.58/0.50 s locally. Startup/health/readiness and isolated JPEG/PNG/WebP memory profiling passed. See PERFORMANCE.md for exact methods and boundaries.
+- Docker unavailable: no container build/up/migrations/ps, live PostgreSQL plans or container RSS/CPU verification. No production data or real Ozon account calls. Task 030 Linux restore remains the task 034 launch gate.

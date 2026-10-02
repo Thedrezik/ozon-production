@@ -31,7 +31,10 @@ def test_inbox_upgrade_downgrade_upgrade(tmp_path, monkeypatch):
         assert {tuple(c["column_names"]) for c in inspector.get_unique_constraints("ozon_webhook_events")} == {("event_key",)}
         assert {c["name"] for c in inspector.get_columns("orders")} >= {"ozon_delivery_date_begin", "ozon_delivery_date_end"}
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0022_audit"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0023_performance"
+        assert "ix_notifications_user_created_id" in {i["name"] for i in inspector.get_indexes("notifications")}
+        assert "ix_delivery_due" in {i["name"] for i in inspector.get_indexes("notification_deliveries")}
+        assert "ix_audit_created_id" in {i["name"] for i in inspector.get_indexes("audit_log")}
         assert {c["name"] for c in inspector.get_columns("photos")} >= {"storage_key", "order_id", "blocker_id", "comment_id", "size_bytes"}
         assert {i["name"] for i in inspector.get_indexes("photos")} == {"ix_photos_order_id", "ix_photos_blocker_id", "ix_photos_comment_id"}
         assert {c["name"] for c in inspector.get_columns("ozon_credentials")} >= {"encrypted_credentials", "revision", "expires_at", "checked_at"}
