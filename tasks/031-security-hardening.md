@@ -1,6 +1,6 @@
 # Task 031 — Security Hardening
 
-status: pending  
+status: completed
 complexity: HIGH  
 recommended_model: GPT-6 Sol
 reasoning: Medium
@@ -54,13 +54,13 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Нет известных critical/high security issues.
-- [ ] Secrets не попадают frontend/logs.
-- [ ] RBAC backend покрыт tests.
-- [ ] Security headers включены.
-- [ ] Upload validation существует.
-- [ ] SECURITY.md создан.
-- [ ] STATE.md обновлён.
+- [x] Нет известных critical/high security issues.
+- [x] Secrets не попадают frontend/logs.
+- [x] RBAC backend покрыт tests.
+- [x] Security headers включены.
+- [x] Upload validation существует.
+- [x] SECURITY.md создан.
+- [x] STATE.md обновлён.
 
 ## Completion
 

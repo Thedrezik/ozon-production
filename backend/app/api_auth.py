@@ -1,5 +1,4 @@
 from typing import Annotated
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -15,7 +14,6 @@ from app.auth import (
     _dummy_hash,
     create_session,
     hash_password,
-    login_limiter,
     require,
     verify_password,
 )
@@ -31,8 +29,8 @@ class LoginInput(BaseModel):
 
 
 class PasswordInput(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: str = Field(min_length=1, max_length=1024)
+    new_password: str = Field(min_length=12, max_length=1024)
 
 
 class CreateUserInput(BaseModel):
@@ -89,6 +87,8 @@ def protect_super_admin(target: User, actor: User) -> None:
 def ensure_super_admin_remains(db: DbSession, target: User) -> None:
     if "SUPER_ADMIN" not in {role.name for role in target.roles} or not target.is_active:
         return
+    # Serialize concurrent removals of different super admins before counting.
+    db.scalar(select(Role).where(Role.name == "SUPER_ADMIN").with_for_update())
     others = db.scalar(
         select(func.count(User.id)).join(User.roles).where(
             Role.name == "SUPER_ADMIN", User.is_active.is_(True), User.id != target.id
@@ -98,25 +98,36 @@ def ensure_super_admin_remains(db: DbSession, target: User) -> None:
         raise HTTPException(409, "The last active super admin cannot be removed")
 
 
+def managed_user(db: DbSession, user_id: int) -> User:
+    # Lock before loading roles: a concurrent promotion must not let an ADMIN
+    # reset/deactivate a newly promoted SUPER_ADMIN using an earlier role snapshot.
+    user = db.scalar(select(User).options(selectinload(User.roles).selectinload(Role.permissions))
+                     .where(User.id == user_id).with_for_update())
+    if user is None:
+        raise HTTPException(404, "User not found")
+    return user
+
+
 @router.post("/auth/login")
 def login(payload: LoginInput, request: Request, response: Response, db: Db) -> dict:
-    origin = request.headers.get("origin")
-    if origin and urlsplit(origin).netloc != request.headers.get("host"):
-        raise HTTPException(403, "Invalid origin")
     username = payload.username.strip().lower()
     client_ip = request.client.host if request.client else "unknown"
+    login_limiter = request.app.state.login_limiter
+    # ASGI socket peer only; forwarded headers are never a rate-limit identity.
+    login_limiter.check(f"ip:{client_ip}", limit=60, reserve=True)
     key = f"{client_ip}:{username}"
-    login_limiter.check(key)
+    login_limiter.check(key, reserve=True)
     user = db.scalar(
         select(User).options(selectinload(User.roles).selectinload(Role.permissions)).where(User.username == username)
     )
     valid = verify_password(user.password_hash if user else _dummy_hash, payload.password)
     if user is None or not user.is_active or not valid:
-        login_limiter.failure(key)
         audit(db, "login.failure", user.id if user else None)
         db.commit()
         raise HTTPException(401, "Invalid credentials")
     login_limiter.success(key)
+    if not user.password_hash.startswith("scrypt$32768$8$3$"):
+        user.password_hash = hash_password(payload.password)
     token, session = create_session(db, user)
     audit(db, "login.success", user.id)
     db.commit()
@@ -128,12 +139,13 @@ def login(payload: LoginInput, request: Request, response: Response, db: Db) -> 
 
 
 @router.post("/auth/logout")
-def logout(response: Response, db: Db, current: Current) -> dict[str, str]:
+def logout(request: Request, response: Response, db: Db, current: Current) -> dict[str, str]:
     user, session = current
     db.delete(session)
     audit(db, "logout", user.id)
     db.commit()
-    response.delete_cookie(COOKIE_NAME, path="/api")
+    response.delete_cookie(COOKIE_NAME, path="/api", httponly=True,
+                           secure=request.app.state.secure_cookies, samesite="strict")
     return {"status": "ok"}
 
 
@@ -144,8 +156,10 @@ def me(current: Current) -> dict:
 
 
 @router.post("/auth/change-password")
-def change_password(payload: PasswordInput, db: Db, current: Current) -> dict[str, str]:
+def change_password(payload: PasswordInput, request: Request, db: Db, current: Current) -> dict[str, str]:
     user, session = current
+    key = f"password-change:{user.id}"
+    request.app.state.login_limiter.check(key, reserve=True)
     if not verify_password(user.password_hash, payload.current_password):
         raise HTTPException(400, "Current password is incorrect")
     try:
@@ -155,6 +169,7 @@ def change_password(payload: PasswordInput, db: Db, current: Current) -> dict[st
     db.execute(delete(Session).where(Session.user_id == user.id, Session.id != session.id))
     audit(db, "password.changed", user.id, user.id)
     db.commit()
+    request.app.state.login_limiter.success(key)
     return {"status": "ok"}
 
 
@@ -207,9 +222,7 @@ def set_roles(
     user_id: int, payload: RolesInput, db: Db,
     actor: Annotated[User, Depends(require("users.manage"))],
 ) -> dict:
-    user = db.scalar(select(User).options(selectinload(User.roles).selectinload(Role.permissions)).where(User.id == user_id))
-    if user is None:
-        raise HTTPException(404, "User not found")
+    user = managed_user(db, user_id)
     protect_super_admin(user, actor)
     roles = chosen_roles(db, payload.roles, actor)
     if "SUPER_ADMIN" in {r.name for r in user.roles} and "SUPER_ADMIN" not in {r.name for r in roles}:
@@ -226,9 +239,7 @@ def deactivate_user(
     user_id: int, db: Db,
     actor: Annotated[User, Depends(require("users.manage"))],
 ) -> dict:
-    user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(404, "User not found")
+    user = managed_user(db, user_id)
     protect_super_admin(user, actor)
     if user.id == actor.id:
         raise HTTPException(409, "Cannot deactivate yourself")
@@ -246,9 +257,7 @@ def reset_password(
     user_id: int, payload: ResetPasswordInput, db: Db,
     actor: Annotated[User, Depends(require("users.manage"))],
 ) -> dict[str, str]:
-    user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(404, "User not found")
+    user = managed_user(db, user_id)
     protect_super_admin(user, actor)
     user.password_hash = hash_password(payload.new_password)
     db.execute(delete(Session).where(Session.user_id == user.id))

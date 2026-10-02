@@ -3,7 +3,10 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api_analytics import router as analytics_router
 from app.api_audit import router as audit_router
@@ -20,6 +23,7 @@ from app.api_ozon_credentials import router as credentials_router
 from app.api_procurement import router as procurement_router
 from app.api_product_profiles import router as product_profiles_router
 from app.api_push import router as push_router
+from app.auth import LoginLimiter
 from app.config import Settings, get_settings
 from app.database import create_db_engine, database_is_ready
 from app.logging import configure_logging
@@ -28,6 +32,7 @@ from app.ozon_credentials import ManagedOzonClient, expiration_loop
 from app.ozon_reconciliation import reconciliation_loop
 from app.ozon_webhook import processing_loop as ozon_webhook_loop
 from app.ozon_webhook import router as ozon_webhook_router
+from app.security import SECURITY_HEADERS, SecurityMiddleware, production_host
 from app.storage import LocalStorage
 from app.telegram import configured as telegram_configured
 from app.telegram import delivery_loop as telegram_delivery_loop
@@ -36,8 +41,8 @@ from app.web_push import configured, delivery_loop
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    configure_logging()
     config = settings or get_settings()
+    configure_logging(config)
     engine = create_db_engine(config.database_url)
 
     @asynccontextmanager
@@ -64,8 +69,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             engine.dispose()
             _app.state.ozon_client.close()
 
-    app = FastAPI(title="Ozon Production API", lifespan=lifespan)
+    production = config.app_env == "production"
+    app = FastAPI(title="Ozon Production API", lifespan=lifespan,
+                  docs_url=None if production else "/docs",
+                  redoc_url=None if production else "/redoc",
+                  openapi_url=None if production else "/openapi.json")
+    if production:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=[production_host(config)], www_redirect=False)
+    app.add_middleware(SecurityMiddleware, settings=config)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_input(_request, _error):
+        # Pydantic's default response echoes input values, including passwords/keys.
+        return JSONResponse({"detail": "Invalid request data"}, status_code=422)
+
+    @app.exception_handler(Exception)
+    async def internal_error(_request, _error):
+        logging.getLogger(__name__).error("Request failed")
+        headers = dict(SECURITY_HEADERS)
+        if production:
+            headers["Strict-Transport-Security"] = "max-age=31536000"
+        return JSONResponse({"detail": "Internal server error"}, status_code=500, headers=headers)
     app.state.engine = engine
+    app.state.login_limiter = LoginLimiter()
     app.state.secure_cookies = config.app_env == "production"
     app.state.order_events = OrderEvents()
     app.state.settings = config

@@ -217,12 +217,20 @@ async def webhook(
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
 ):
     settings = request.app.state.settings
-    if not settings.telegram_webhook_secret or not secrets.compare_digest(
+    if (not settings.telegram_webhook_secret or not (x_telegram_bot_api_secret_token or "").isascii()
+            or not settings.telegram_webhook_secret.isascii() or not secrets.compare_digest(
         x_telegram_bot_api_secret_token or "", settings.telegram_webhook_secret
-    ):
+    )):
         raise HTTPException(403, "Forbidden")
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > 64 * 1024:
+            raise HTTPException(413, "Payload exceeds the size limit")
+        body.extend(chunk)
     try:
-        update = await request.json()
+        import json
+
+        update = json.loads(body)
         message = update.get("message", {})
         parts = (message.get("text") or "").split()
         if len(parts) != 2 or parts[0] != "/start":
@@ -245,6 +253,11 @@ async def webhook(
             )
             <= now
         ):
+            return {"ok": True}
+        user = db.get(User, link.user_id)
+        if not user or not user.is_active:
+            db.delete(link)
+            db.commit()
             return {"ok": True}
         chat_id = str(message.get("chat", {}).get("id", ""))
         if not chat_id or not chat_id.lstrip("-").isdigit():

@@ -395,11 +395,15 @@ async def events(request: Request, _current: Current):
     queue = bus.subscribe()
 
     async def stream():
+        deadline = asyncio.get_running_loop().time() + 20
         try:
             yield ": connected\n\n"
             while not await request.is_disconnected():
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    break
                 try:
-                    order_id = await asyncio.wait_for(queue.get(), timeout=20)
+                    order_id = await asyncio.wait_for(queue.get(), timeout=remaining)
                 except TimeoutError:
                     break  # Reconnect through auth to pick up role/session changes.
                 yield f"event: orders\ndata: {order_id}\n\n"

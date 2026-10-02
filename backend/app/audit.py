@@ -7,6 +7,7 @@ from sqlalchemy import and_, event, inspect, or_, select
 from sqlalchemy.orm import Session
 
 from app import models
+from app.logging import redact_text
 
 # No request body, credential ciphertext, token, password, free-form descriptions or
 # raw integration payloads are serialized. Extend only after reviewing a field.
@@ -34,6 +35,8 @@ def redact(item):
         return {key: "[REDACTED]" if SECRET.search(key) else redact(val) for key, val in item.items()}
     if isinstance(item, list):
         return [redact(val) for val in item]
+    if isinstance(item, str):
+        return redact_text(item)
     return item
 
 
@@ -111,6 +114,8 @@ def before_flush(db, _context, _instances):
             context = db.info.get("audit_context", {})
             row.ip = row.ip or context.get("ip")
             row.user_agent = row.user_agent or context.get("user_agent")
+            row.user_agent = redact_text(row.user_agent) if row.user_agent else None
+            row.detail = redact_text(row.detail) if row.detail else None
             row.actor_user_id = row.actor_user_id or context.get("actor_user_id")
 
 

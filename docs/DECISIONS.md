@@ -1,5 +1,32 @@
 # Architecture Decisions
 
+## 031 — Harden the existing session and single-proxy deployment
+
+Keep server-side opaque sessions, per-session CSRF, backend RBAC, encrypted Ozon
+credentials, existing file validator and notification queue. No JWT, parallel
+auth/limiter, infrastructure or new schema. Production settings fail closed:
+real HTTPS origin matching Caddy DOMAIN, explicit Compose APP_ENV,
+non-default PostgreSQL credentials, random deployment secret,
+valid Fernet master key, mock mode forbidden and complete optional integrations.
+Disable production docs and validate Host. Uvicorn ignores forwarded headers;
+trust Ozon source headers only from exact configured Caddy addresses. Socket-peer
+login budget is aggregate behind Caddy (60/15 minutes); account/peer budget is
+5/15 minutes. Atomic limiter reservations and one hash slot bound brute force and
+memory. New scrypt uses OWASP's 32 MiB N=32768/r=8/p=3; legacy p=1 hashes upgrade
+on login. SSE must reconnect within 20 seconds even under continuous events.
+User management locks its target before reading roles; super-admin removal locks
+the existing SUPER_ADMIN role before counting survivors, closing promotion/removal
+races without a new mechanism. PostgreSQL supplies the production row locks.
+
+Apply same-origin browser mutation policy, generic validation/error responses,
+bounded JSON bodies and API security headers; Caddy protects the static PWA with
+self-only scripts/workers, no framing/objects, no-referrer and HTTPS-only HSTS.
+Inline styles remain allowed for existing UI, inline scripts do not. Disable
+transport/access logs that can carry capability URLs; redact secrets in structured
+logs/audit text without retaining raw exception bodies. Keep deployment checks
+explicit in SECURITY.md, including actual Caddy/PostgreSQL execution, real provider
+delivery and the task 034 Linux restore gate. No deployment is implied by local tests.
+
 ## 028 — Production analytics from operational tables
 
 Read-only SQL aggregates use existing first-stage timestamps; NEW starts at local

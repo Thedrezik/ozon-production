@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import selectinload
 
+from app.logging import redact_text
 from app.models import Role, Session, User, utc_now
 from app.rbac import user_permissions
 
@@ -18,11 +19,13 @@ COOKIE_NAME = "ozon_session"
 SESSION_SECONDS = 12 * 60 * 60
 SCRYPT_N = 1 << 15
 SCRYPT_R = 8
-SCRYPT_P = 1
+SCRYPT_P = 3
+_hash_slot = threading.Semaphore(1)
 
 
 def _scrypt(password: str, salt: bytes, n: int = SCRYPT_N, r: int = SCRYPT_R, p: int = SCRYPT_P) -> bytes:
-    return hashlib.scrypt(password.encode("utf-8"), salt=salt, n=n, r=r, p=p, maxmem=64 * 1024 * 1024)
+    with _hash_slot:
+        return hashlib.scrypt(password.encode("utf-8"), salt=salt, n=n, r=r, p=p, maxmem=64 * 1024 * 1024)
 
 
 _dummy_hash = None
@@ -39,9 +42,10 @@ def hash_password(password: str) -> str:
 def verify_password(password_hash: str, password: str) -> bool:
     try:
         algorithm, n, r, p, salt, expected = password_hash.split("$")
-        if algorithm != "scrypt" or (int(n), int(r), int(p)) != (SCRYPT_N, SCRYPT_R, SCRYPT_P):
+        if (len(password) > 1024 or algorithm != "scrypt"
+                or (int(n), int(r), int(p)) not in ((SCRYPT_N, SCRYPT_R, 1), (SCRYPT_N, SCRYPT_R, SCRYPT_P))):
             return False
-        return secrets.compare_digest(_scrypt(password, bytes.fromhex(salt)), bytes.fromhex(expected))
+        return secrets.compare_digest(_scrypt(password, bytes.fromhex(salt), int(n), int(r), int(p)), bytes.fromhex(expected))
     except (ValueError, TypeError):
         return False
 
@@ -52,7 +56,7 @@ _dummy_hash = hash_password("invalid-password")
 def get_db(request: Request):
     with DbSession(request.app.state.engine) as db:
         db.info["audit_context"] = {"ip": request.client.host if request.client else None,
-                                    "user_agent": request.headers.get("user-agent", "")[:512]}
+                                    "user_agent": redact_text(request.headers.get("user-agent", "")[:512])}
         yield db
 
 
@@ -78,7 +82,7 @@ def create_session(db: DbSession, user: User) -> tuple[str, Session]:
 
 def authenticated(request: Request, db: Db) -> tuple[User, Session]:
     token = request.cookies.get(COOKIE_NAME)
-    if not token or len(token) > 128:
+    if not token or len(token) > 128 or not token.isascii():
         raise HTTPException(401, "Authentication required")
     session = db.scalar(select(Session).where(Session.token_hash == token_digest(token)))
     if session is None:
@@ -95,7 +99,7 @@ def authenticated(request: Request, db: Db) -> tuple[User, Session]:
         raise HTTPException(401, "Authentication required")
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         csrf = request.headers.get("X-CSRF-Token", "")
-        if not csrf or not secrets.compare_digest(csrf, session.csrf_token):
+        if not csrf or not csrf.isascii() or not secrets.compare_digest(csrf, session.csrf_token):
             raise HTTPException(403, "Invalid CSRF token")
     db.info["audit_context"]["actor_user_id"] = user.id
     return user, session
@@ -120,24 +124,21 @@ class LoginLimiter:
         self._attempts: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
 
-    def check(self, key: str) -> None:
+    def check(self, key: str, limit: int = 5, *, reserve: bool = False) -> None:
         with self._lock:
             now = time.monotonic()
-            if len(self._attempts) > 4096:
+            if len(self._attempts) >= 4096:
                 self._attempts = defaultdict(deque, {k: v for k, v in self._attempts.items() if v and v[-1] > now - 900})
+                if key not in self._attempts and len(self._attempts) >= 4096:
+                    raise HTTPException(429, "Too many login attempts")
             attempts = self._attempts[key]
             while attempts and attempts[0] <= now - 900:
                 attempts.popleft()
-            if len(attempts) >= 5:
+            if len(attempts) >= limit:
                 raise HTTPException(429, "Too many login attempts")
-
-    def failure(self, key: str) -> None:
-        with self._lock:
-            self._attempts[key].append(time.monotonic())
+            if reserve:
+                attempts.append(now)
 
     def success(self, key: str) -> None:
         with self._lock:
             self._attempts.pop(key, None)
-
-
-login_limiter = LoginLimiter()

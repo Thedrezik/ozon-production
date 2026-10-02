@@ -1,4 +1,6 @@
 import re
+import struct
+import zlib
 from io import BytesIO
 
 import pytest
@@ -70,6 +72,33 @@ def test_stream_size_limit(context):
     assert not app.state.storage.root.exists()
 
 
+def test_decompression_bomb_and_polyglot(context):
+    app, client, headers, order = context
+    url = f"/api/files/orders/{order['id']}/photos"
+    png = bytearray(image_bytes())
+    # Oversized dimensions in IHDR; reject before allocating decoded pixels.
+    png[16:24] = struct.pack(">II", 5000, 5000)
+    png[29:33] = struct.pack(">I", zlib.crc32(png[12:29]))
+    assert client.post(url, content=bytes(png), headers={**headers, "Content-Type": "image/png"}).status_code == 415
+    assert not app.state.storage.root.exists()
+    payload = b'<script>alert(document.cookie)</script>'
+    photo = client.post(url, content=image_bytes() + payload,
+                        headers={**headers, "Content-Type": "image/png"}).json()
+    saved = client.get(photo["url"])
+    assert payload not in saved.content
+    assert saved.headers["content-type"] == "image/jpeg"
+
+
+def test_corrupted_storage_key_cannot_escape_volume(context):
+    app, client, headers, order = context
+    photo = client.post(f"/api/files/orders/{order['id']}/photos", content=image_bytes(),
+                        headers={**headers, "Content-Type": "image/png"}).json()
+    with Session(app.state.engine) as db:
+        db.get(Photo, photo["id"]).storage_key = "../../.env"
+        db.commit()
+    assert client.get(photo["url"]).status_code == 404
+
+
 def test_blocker_and_comment_targets(context):
     _app, client, headers, order = context
     blocker = client.post("/api/blockers", headers=headers, json={"order_id": order["id"],
@@ -132,7 +161,8 @@ def test_storage_boundary_and_traversal(tmp_path):
     key = storage.put(b"test")
     assert storage.read(key) == b"test"
     assert LocalStorage(str(tmp_path / "uploads")).read(key) == b"test"
-    for invalid in ("../evil.jpg", "/etc/passwd", "a.jpg", "..\\evil.jpg"):
+    for invalid in ("../evil.jpg", "/etc/passwd", "a.jpg", "..\\evil.jpg", "%2e%2e%2f.env",
+                    "C:\\Windows\\win.ini", "a" * 32 + ".jpg:stream", "\x00.env"):
         with pytest.raises(ValueError):
             storage.read(invalid)
     storage.delete(key)

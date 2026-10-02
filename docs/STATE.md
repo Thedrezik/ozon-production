@@ -4,6 +4,7 @@ Last updated: 2026-10-02
 
 ## Completed
 
+- Task 031: security review and hardening of existing auth/RBAC/session, production config, headers/CSP, secret handling/logging, JSON/Telegram limits and SSE reauthentication. User-management row locks close promotion/last-super-admin races; SECURITY.md records controls and deployment gates. No commit/push.
 - Task 030: PostgreSQL/uploads backups, retention, guarded transactional DB restore, staged uploads restore, Linux operations guide and automated checks. Backup creation confirmed by user's real Docker run on Windows; final Linux restore drill is a mandatory task 034 production-launch gate.
 - Task 001: application bootstrap, database, PWA and local Compose checks.
 - Task 002: users, roles, permissions, sessions, admin bootstrap, audit log, login limiter, and frontend login/user management.
@@ -44,11 +45,11 @@ Last updated: 2026-10-02
 
 ## Current
 
-- Task 030 completed by user-approved verification boundary. Windows manual drill debugging stopped; full destructive Linux restore verification moved to task 034 before production launch. Migration head: `0022_audit`. No commit or push.
+- Task 031 completed. No known critical/high issues remain in the reviewed code/dependency set. Container/Caddy/PostgreSQL concurrency and real-provider checks remain deployment gates. Migration head: `0022_audit`; no schema change, commit or push.
 
 ## Next
 
-- Await a separate task request; do not begin task 031. Task 034 must pass the mandatory isolated Linux VPS backup → modify → restore → verify gate before production launch.
+- Await a separate task request; task 032 has not been started. Task 034 must pass the mandatory isolated Linux VPS backup → modify → restore → verify gate before production launch.
 
 ## Known Issues
 
@@ -73,8 +74,7 @@ Last updated: 2026-10-02
 
 ## Last Tests
 
-- Task 030: Bash syntax and synthetic checks passed (archive creation/structure, newest-file retention, confirmation, guarded --yes, DB/utility/validation failures, uploads restore and corrupted-stream rollback). PowerShell regression passed (stdin filename/transaction checks, 18 Compose calls, 4 root Docker calls and production guards). git diff --check passed. User-confirmed real Windows Docker backup creation; full Linux restore deferred to mandatory task 034 acceptance.
-- Task 029: full backend suite 213 passed; focused audit/auth 15 passed (7 audit cases). Ruff app/tests/Alembic passed. Existing Starlette/httpx and Alembic deprecation warnings remain.
-- Frontend lint/typecheck/production build and headless Edge mobile mock audit UI passed: all filters, pagination, old/new detail, empty state and audit.view visibility. git diff --check passed.
-- Alembic upgrade/downgrade/upgrade and audit columns/indexes verified on SQLite. PostgreSQL SQL generation for 0021_analytics → 0022_audit and downgrade passed, including append-only UPDATE/DELETE/TRUNCATE trigger. Older rows are preserved without fabricated snapshots.
-- Docker unavailable: Compose build/up, container migration/ps, actual PostgreSQL schema/trigger execution and container health/readiness were not run. Health/readiness backend tests pass; apply migration before deployment.
+- Task 031: full backend suite passed twice (245, then 250 tests). Final logging/security/audit/Ozon regressions: 90 passed; subsequent final auth/security/audit regressions including management locks: 57 passed. Ruff app/tests/Alembic, compileall and git diff --check passed. Existing Starlette/httpx and Alembic deprecation warnings remain.
+- Frontend lint/typecheck/build, offline snapshot and push-worker tests passed. Headless Edge against the actual production build passed React XSS escaping, deployed CSP inline-script rejection and backend-secret sentinel bundle scan.
+- pip-audit: no known vulnerabilities after fixing pip/pytest; pip check passed. npm audit: zero vulnerabilities (530 dependencies). No runtime or frontend upgrades required.
+- Docker/Caddy unavailable: no Compose up/build, container migrations/ps, live PostgreSQL locks/trigger, container health/readiness or edge-header/debug-leak verification. Local health/readiness/config/header/error tests passed. Task 030 Linux restore remains the task 034 launch gate.
