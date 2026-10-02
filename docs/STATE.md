@@ -4,6 +4,7 @@ Last updated: 2026-10-02
 
 ## Completed
 
+- Task 030: PostgreSQL/uploads backups, retention, guarded transactional DB restore, staged uploads restore, Linux operations guide and automated checks. Backup creation confirmed by user's real Docker run on Windows; final Linux restore drill is a mandatory task 034 production-launch gate.
 - Task 001: application bootstrap, database, PWA and local Compose checks.
 - Task 002: users, roles, permissions, sessions, admin bootstrap, audit log, login limiter, and frontend login/user management.
 - Task 003: repeatable mock orders, production queue, assignments, internal status history, mobile task screens and SSE refresh.
@@ -43,15 +44,15 @@ Last updated: 2026-10-02
 
 ## Current
 
-- Task 029 complete. Audit boundary and immutability documented in DECISIONS.md. Migration head: `0022_audit`. No commit or push.
+- Task 030 completed by user-approved verification boundary. Windows manual drill debugging stopped; full destructive Linux restore verification moved to task 034 before production launch. Migration head: `0022_audit`. No commit or push.
 
 ## Next
 
-- Task 029 finished. Task 030 has not been started; await a separate task request.
+- Await a separate task request; do not begin task 031. Task 034 must pass the mandatory isolated Linux VPS backup → modify → restore → verify gate before production launch.
 
 ## Known Issues
 
-- Docker/Caddy executables are unavailable here; PostgreSQL/Compose and Caddy runtime checks could not be run for task 029. Real Ozon connection/delivery remains an HTTPS deployment check.
+- Full PostgreSQL restore remains unverified on the target Linux VPS: mandatory task 034 launch gate. User's Windows Docker run confirmed unique isolated volumes, migrations, PostgreSQL/uploads archive creation, publication to /data/backups and isolated failure cleanup. Windows harness stopped at `Unexpected backup bundle members`; full Windows restore is non-authoritative because of PowerShell/Git Bash/MSYS compatibility. Docker/Caddy/shellcheck unavailable in the agent environment. Real Ozon connection/delivery remains an HTTPS deployment check.
 - Starlette emits a dependency deprecation warning about its TestClient/httpx integration; tests pass.
 - Web Push UI smoke passed on mock data; actual OS push reception awaits deployment with VAPID/HTTPS. The earlier two-browser SSE scenario still awaits a running deployment.
 - Real account import remains a deployment check. All automated import validation uses synthetic fixtures/mock HTTP; no live Ozon calls were made.
@@ -72,6 +73,7 @@ Last updated: 2026-10-02
 
 ## Last Tests
 
+- Task 030: Bash syntax and synthetic checks passed (archive creation/structure, newest-file retention, confirmation, guarded --yes, DB/utility/validation failures, uploads restore and corrupted-stream rollback). PowerShell regression passed (stdin filename/transaction checks, 18 Compose calls, 4 root Docker calls and production guards). git diff --check passed. User-confirmed real Windows Docker backup creation; full Linux restore deferred to mandatory task 034 acceptance.
 - Task 029: full backend suite 213 passed; focused audit/auth 15 passed (7 audit cases). Ruff app/tests/Alembic passed. Existing Starlette/httpx and Alembic deprecation warnings remain.
 - Frontend lint/typecheck/production build and headless Edge mobile mock audit UI passed: all filters, pagination, old/new detail, empty state and audit.view visibility. git diff --check passed.
 - Alembic upgrade/downgrade/upgrade and audit columns/indexes verified on SQLite. PostgreSQL SQL generation for 0021_analytics → 0022_audit and downgrade passed, including append-only UPDATE/DELETE/TRUNCATE trigger. Older rows are preserved without fabricated snapshots.

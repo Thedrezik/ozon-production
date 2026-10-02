@@ -1,0 +1,13 @@
+# Compose overlay for isolated backup/restore drills. Set DRILL_VOLUME_PREFIX
+# to a fresh unique value before every drill. Never reuse production volume names.
+volumes:
+  postgres_data:
+    name: ${DRILL_VOLUME_PREFIX:?Set DRILL_VOLUME_PREFIX}_postgres_data
+  uploads:
+    name: ${DRILL_VOLUME_PREFIX:?Set DRILL_VOLUME_PREFIX}_uploads
+  backups:
+    name: ${DRILL_VOLUME_PREFIX:?Set DRILL_VOLUME_PREFIX}_backups
+  caddy_data:
+    name: ${DRILL_VOLUME_PREFIX:?Set DRILL_VOLUME_PREFIX}_caddy_data
+  caddy_config:
+    name: ${DRILL_VOLUME_PREFIX:?Set DRILL_VOLUME_PREFIX}_caddy_config

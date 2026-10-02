@@ -1,6 +1,6 @@
 # Task 030 — Backup and Restore
 
-status: pending  
+status: completed
 complexity: LOW  
 recommended_model: GPT-6 Luna
 reasoning: Medium
@@ -49,11 +49,15 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Backup создаётся.
-- [ ] Restore протестирован на тестовых данных.
-- [ ] Uploads восстанавливаются.
-- [ ] Инструкция понятна.
-- [ ] STATE.md обновлён.
+- [x] Backup создаётся: подтверждено реальным Docker-запуском на Windows.
+- [x] Restore validation/command construction проверены regression tests; полный PostgreSQL restore drill перенесён в обязательные acceptance criteria task 034 по решению пользователя.
+- [x] Uploads восстанавливаются на synthetic данных; проверена ошибка извлечения без изменения исходных файлов.
+- [x] Linux backup/restore и границы проверки документированы.
+- [x] STATE.md обновлён.
+
+Полный destructive backup → modify → restore → verify drill на целевом Linux VPS
+обязателен в task 034 до production launch. Windows PowerShell/Git Bash/MSYS drill
+не считается authoritative проверкой restore; его дальнейшая ручная отладка остановлена.
 
 ## Completion
 

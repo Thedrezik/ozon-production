@@ -368,3 +368,54 @@ Expose only paginated GET `/api/audit` with backend `audit.view`, exact user/act
 entity type/ID filters and an inclusive timezone-aware UTC period, ordered by time
 and ID descending. The permission-gated mobile UI shows safe snapshots and metadata.
 There are no mutation/export endpoints or additional event-store infrastructure.
+
+## 030 — Portable Compose backup bundle and guarded restore
+
+Use the existing Compose `backups` and `uploads` named volumes. One UTC timestamped
+archive contains a `pg_dump` custom-format database dump, a gzip tar of the contents
+of `/data/uploads`, and a non-secret manifest; `.env` and credentials are excluded.
+Stream data from existing containers so no database/upload utilities need to be
+installed on the host. Publish atomically through a temporary filename and retain
+the newest configurable number of complete bundles (14 by default).
+
+Restore validates both archive layers and the PostgreSQL dump before asking for
+explicit confirmation. Short-lived Compose run containers access the existing
+backend volumes, allowing the API to remain stopped throughout restore. A database
+restore stops the operator from proceeding silently and restores dump objects in
+the configured DB using `--single-transaction --clean --if-exists`, without owner/privilege commands. Upload restore replaces contents
+of the existing persistent upload directory. Stop the app for either operation.
+Keep off-host encrypted copies as a separate deployment responsibility. Runtime
+restore validation still needs a Docker-enabled deployment/test host.
+
+For local restore drills, use a separate Compose overlay that explicitly names every
+volume with a fresh `DRILL_VOLUME_PREFIX`; a project name alone is insufficient
+when a deployment declares fixed volume names. Backup/restore scripts accept an
+optional second Compose file through `COMPOSE_OVERRIDE_FILE`. Before restore or
+cleanup, inspect resolved Compose volume names and require the drill-specific
+PostgreSQL/uploads/backups names. Never restore into the production named volumes.
+The Windows PowerShell drill runner manages a unique project, verifies resolved
+names before destructive actions, disables Git Bash path conversion, uses synthetic
+data, and cleans only the verified drill Compose environment. `restore.sh --yes`
+requires the explicit drill marker, overlay, generated volume prefix and matching
+project name; ordinary restore remains interactively confirmed.
+
+pg_restore reads the streamed custom dump with no input filename: a literal `-`
+is a filename, not stdin. Validation and restore use the same stdin convention.
+Do not drop/recreate the DB before restoring: SQL errors roll back one transaction.
+Uploads extract into a staging directory on the existing volume and retain old
+entries until promotion succeeds, with rollback on command failure. Database and
+uploads commits cannot be atomic together; a failure after DB commit requires
+rerunning restore while the app remains stopped. Process/power loss can also leave
+upload recovery directories requiring operator inspection. Objects absent from
+the dump are not removed by pg_restore --clean.
+
+Task 030 verification boundary (2026-10-02): the user's real Windows Docker run
+confirmed isolated volumes without production mounts, successful migrations,
+PostgreSQL dump and uploads archive creation, bundle publication in /data/backups,
+and failure cleanup restricted to drill resources. The Windows harness stopped at
+bundle-member checking; full Windows restore is not authoritative because of
+PowerShell/Git Bash/MSYS compatibility. Stop further manual Windows workaround
+development. Complete task 030's implementation with passing automated checks;
+require an actual isolated backup → modify → restore → verify drill on the target
+Linux VPS in task 034 before production launch. All DB/upload, retention, cleanup
+and production-volume preservation assertions must pass and be documented there.

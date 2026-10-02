@@ -36,6 +36,8 @@ reasoning: Medium
 - Health/readiness checks.
 - Создать DEPLOYMENT.md.
 - Добавить команды update/rollback на разумном уровне.
+- До production launch выполнить на целевом Linux VPS полный destructive backup → modify → restore → verify drill через реальные `scripts/backup.sh` / `scripts/restore.sh` на synthetic данных в отдельном Compose project с уникальными PostgreSQL/uploads/backups volumes. Проверить resolved volume names до restore/cleanup: production volumes запрещены. Windows PowerShell/Git Bash/MSYS drill не заменяет эту проверку.
+- Зафиксировать результат Linux drill в DEPLOYMENT.md и STATE.md: migrations, database.dump/uploads.tar.gz/README.txt и публикация в /data/backups; подтверждённое изменение DB/upload после backup; настоящий PostgreSQL restore; DB marker `before-backup`, исходный upload восстановлен, post-backup upload отсутствует; retention сохраняет последние архивы; cleanup удаляет только drill resources; production volumes остаются прежними. Сбой любого этапа блокирует production launch.
 
 ## General Constraints
 
@@ -59,6 +61,7 @@ reasoning: Medium
 - [ ] Frontend/backend доступны по ожидаемому URL.
 - [ ] Webhook route доступен извне.
 - [ ] Persistent data переживает container restart.
+- [ ] На целевом Linux VPS успешно выполнен и документирован полный isolated backup/restore drill из task 030 со всеми проверками выше; production volumes не затронуты. Обязательное условие перед production launch.
 - [ ] DEPLOYMENT.md создан.
 - [ ] STATE.md обновлён.
 
