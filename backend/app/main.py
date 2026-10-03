@@ -13,7 +13,6 @@ from app.api_audit import router as audit_router
 from app.api_auth import router as auth_router
 from app.api_blockers import router as blockers_router
 from app.api_dashboard import router as dashboard_router
-from app.api_files import router as files_router
 from app.api_manager_tasks import router as manager_tasks_router
 from app.api_money_at_risk import router as money_at_risk_router
 from app.api_notifications import router as notifications_router
@@ -22,10 +21,10 @@ from app.api_ozon import router as ozon_router
 from app.api_ozon_credentials import router as credentials_router
 from app.api_procurement import router as procurement_router
 from app.api_product_profiles import router as product_profiles_router
-from app.api_push import router as push_router
-from app.auth import LoginLimiter
+from app.auth import Current, LoginLimiter
 from app.config import Settings, get_settings
 from app.database import create_db_engine, database_is_ready
+from app.features import enabled
 from app.logging import configure_logging
 from app.order_events import OrderEvents
 from app.ozon_credentials import ManagedOzonClient, expiration_loop
@@ -37,7 +36,6 @@ from app.storage import LocalStorage
 from app.telegram import configured as telegram_configured
 from app.telegram import delivery_loop as telegram_delivery_loop
 from app.telegram import router as telegram_router
-from app.web_push import configured, delivery_loop
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -49,15 +47,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_app: FastAPI):
         _app.state.ozon_client = ManagedOzonClient(engine, config)
         stop = asyncio.Event()
-        workers = [asyncio.create_task(expiration_loop(engine, config, stop))]
+        workers = []
+        if enabled(config, "key_expiration"):
+            workers.append(asyncio.create_task(expiration_loop(engine, config, stop)))
         if config.ozon_reconciliation_enabled:
             workers.append(asyncio.create_task(reconciliation_loop(
                 engine, _app.state.ozon_client, config, _app.state.order_events, stop)))
         if config.ozon_webhook_enabled:
             workers.append(asyncio.create_task(ozon_webhook_loop(
                 engine, _app.state.ozon_client, config, _app.state.order_events, stop)))
-        if configured(config):
-            workers.append(asyncio.create_task(delivery_loop(engine, config, stop)))
+        if enabled(config, "web_push"):
+            from app.web_push import configured, delivery_loop
+
+            if configured(config):
+                workers.append(asyncio.create_task(delivery_loop(engine, config, stop)))
         if telegram_configured(config):
             workers.append(asyncio.create_task(telegram_delivery_loop(engine, config, stop)))
         try:
@@ -98,7 +101,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.storage = LocalStorage(config.upload_dir)
     app.state.upload_slot = asyncio.Semaphore(1)
     app.include_router(audit_router)
-    app.include_router(files_router)
+    if enabled(config, "photos") or enabled(config, "scanner"):
+        from app.api_files import router as files_router
+
+        app.include_router(files_router)
     app.include_router(auth_router)
     app.include_router(orders_router)
     app.include_router(ozon_router)
@@ -106,14 +112,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ozon_webhook_router)
     app.include_router(product_profiles_router)
     app.include_router(blockers_router)
-    app.include_router(manager_tasks_router)
-    app.include_router(procurement_router)
+    if enabled(config, "manager_tasks"):
+        app.include_router(manager_tasks_router)
+    if enabled(config, "procurement"):
+        app.include_router(procurement_router)
     app.include_router(money_at_risk_router)
     app.include_router(notifications_router)
-    app.include_router(push_router)
+    if enabled(config, "web_push"):
+        from app.api_push import router as push_router
+
+        app.include_router(push_router)
     app.include_router(telegram_router)
     app.include_router(dashboard_router)
-    app.include_router(analytics_router)
+    if enabled(config, "analytics"):
+        app.include_router(analytics_router)
+
+    @app.get("/api/features")
+    def features(_current: Current):
+        return {"optional": config.enabled_optional_features.split(",") if config.enabled_optional_features else [],
+                "timezone": config.organization_timezone}
 
     @app.get("/api/health")
     def health() -> dict[str, str | bool]:

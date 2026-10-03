@@ -3,10 +3,11 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy import func, select
+from sqlalchemy.orm import joinedload, raiseload, selectinload
 
 from app.auth import Db, require
+from app.features import db_enabled
 from app.manager_tasks import ensure_task, resolve_source
 from app.models import (
     AuditLog,
@@ -19,15 +20,16 @@ from app.models import (
 )
 from app.notifications import emit, manager_ids
 from app.orders import transition
+from app.ozon_status import is_cancelled
 
 router = APIRouter(prefix="/api/blockers")
 ACTIVE = ("OPEN", "IN_PROGRESS")
-BLOCKABLE = ("QUEUED", "SENT_TO_PRODUCTION", "IN_PRODUCTION", "QUALITY_CHECK")
+BLOCKABLE = ("NEW", "QUEUED", "SENT_TO_PRODUCTION", "IN_PRODUCTION", "PRODUCED", "QUALITY_CHECK", "PACKING", "READY_TO_SHIP")
 
 
 class BlockerInput(BaseModel):
     order_id: int
-    type_code: str
+    type_code: str = "OTHER"
     description: str = Field(min_length=1, max_length=5000)
     severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] = "MEDIUM"
     assigned_to: int | None = None
@@ -37,9 +39,10 @@ class BlockerInput(BaseModel):
 class BlockerUpdate(BaseModel):
     status: Literal["IN_PROGRESS", "RESOLVED", "CANCELLED"]
     assigned_to: int | None = None
+    resolution_comment: str | None = Field(default=None, max_length=5000)
 
 
-def data(row: Blocker) -> dict:
+def data(row: Blocker, *, photos: bool = True) -> dict:
     return {
         "id": row.id, "order_id": row.order_id, "posting_number": row.order.posting_number,
         "type_code": row.type_code, "description": row.description, "severity": row.severity,
@@ -47,8 +50,14 @@ def data(row: Blocker) -> dict:
         "assigned_to": row.assigned_to, "expected_resolution_at": row.expected_resolution_at,
         "created_at": row.created_at, "updated_at": row.updated_at, "resolved_at": row.resolved_at,
         "previous_production_status": row.previous_production_status,
-        "photos": [{"id": photo.id, "url": f"/api/files/photos/{photo.id}"} for photo in row.photos],
+        "resolved_by_user_id": row.resolved_by_user_id, "resolution_comment": row.resolution_comment,
+        "photos": [{"id": photo.id, "url": f"/api/files/photos/{photo.id}"} for photo in row.photos] if photos else [],
     }
+
+
+def blocker_query(db: Db):
+    photos = selectinload(Blocker.photos) if db_enabled(db, "photos") else raiseload(Blocker.photos)
+    return select(Blocker).options(joinedload(Blocker.order), photos)
 
 
 @router.get("/types")
@@ -60,18 +69,26 @@ def types(db: Db, _actor: Annotated[User, Depends(require("orders.view"))]) -> l
 @router.get("")
 def list_blockers(db: Db, _actor: Annotated[User, Depends(require("orders.view"))],
                   order_id: int | None = None, status: str | None = None,
-                  limit: int = 50, offset: int = 0) -> dict:
+                  limit: int = 50, offset: int = 0, active: bool = False) -> dict:
     if status is not None and status not in ("OPEN", "IN_PROGRESS", "RESOLVED", "CANCELLED"):
         raise HTTPException(422, "Unknown blocker status")
     if not 1 <= limit <= 100 or offset < 0:
         raise HTTPException(422, "Invalid pagination")
-    query = select(Blocker).options(joinedload(Blocker.order), selectinload(Blocker.photos))
+    query = blocker_query(db)
     if order_id is not None:
         query = query.where(Blocker.order_id == order_id)
     if status:
         query = query.where(Blocker.status == status)
+    if active:
+        query = query.where(Blocker.status.in_(ACTIVE))
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = db.scalars(query.order_by(Blocker.created_at.desc(), Blocker.id.desc()).limit(limit).offset(offset)).all()
-    return {"items": [data(row) for row in rows]}
+    return {"items": [data(row, photos=db_enabled(db, "photos")) for row in rows], "total": total}
+
+
+@router.get("/summary")
+def summary(db: Db, _actor: Annotated[User, Depends(require("orders.view"))]) -> dict:
+    return {"active": db.scalar(select(func.count()).select_from(Blocker).where(Blocker.status.in_(ACTIVE))) or 0}
 
 
 @router.post("", status_code=201)
@@ -80,7 +97,7 @@ def create_blocker(payload: BlockerInput, db: Db, request: Request,
     order = db.scalar(select(Order).where(Order.id == payload.order_id).with_for_update())
     if order is None:
         raise HTTPException(404, "Order not found")
-    if order.ozon_status == "cancelled":
+    if is_cancelled(order.ozon_status):
         raise HTTPException(409, "Ozon cancelled this posting; manager review required")
     if order.internal_status not in (*BLOCKABLE, "BLOCKED"):
         raise HTTPException(409, "Order cannot be blocked")
@@ -108,7 +125,7 @@ def create_blocker(payload: BlockerInput, db: Db, request: Request,
                 severity=payload.severity, due_at=payload.expected_resolution_at)
     emit(db, type="BLOCKER_CREATED", event_key=f"blocker:{row.id}",
          user_ids=manager_ids(db), title=f"Проблема заказа {order.posting_number}",
-         body=description, url=f"/manager-tasks/{task.id}")
+         body=description, url=f"/manager-tasks/{task.id}" if task else f"/orders/{order.id}")
     if previous:
         transition(db, order, "BLOCKED", actor.id)
     db.add(OrderTimelineEvent(order_id=order.id, event_type="blocker_created",
@@ -116,7 +133,7 @@ def create_blocker(payload: BlockerInput, db: Db, request: Request,
     db.add(AuditLog(actor_user_id=actor.id, action="blocker.created", detail=f"{order.posting_number} #{row.id}"))
     db.commit()
     request.app.state.order_events.publish(order.id)
-    return data(db.scalar(select(Blocker).options(joinedload(Blocker.order), selectinload(Blocker.photos)).where(Blocker.id == row.id)))
+    return data(db.scalar(blocker_query(db).where(Blocker.id == row.id)), photos=db_enabled(db, "photos"))
 
 
 @router.patch("/{blocker_id}")
@@ -129,6 +146,8 @@ def update_blocker(blocker_id: int, payload: BlockerUpdate, db: Db, request: Req
     row = db.scalar(select(Blocker).where(Blocker.id == blocker_id).with_for_update())
     if row.status not in ACTIVE:
         raise HTTPException(409, "Blocker already closed")
+    if not db_enabled(db, "advanced_workflow") and payload.status != "RESOLVED":
+        raise HTTPException(409, "Use problem resolution")
     if payload.status == "IN_PROGRESS" and row.status != "OPEN":
         raise HTTPException(409, "Blocker already in progress")
     if payload.assigned_to is not None:
@@ -140,6 +159,8 @@ def update_blocker(blocker_id: int, payload: BlockerUpdate, db: Db, request: Req
     row.updated_at = utc_now()
     if payload.status not in ACTIVE:
         row.resolved_at = row.updated_at
+        row.resolved_by_user_id = actor.id
+        row.resolution_comment = payload.resolution_comment.strip() or None if payload.resolution_comment else None
         resolve_source(db, source_type="BLOCKER", source_id=row.id)
         if payload.status == "RESOLVED":
             emit(db, type="BLOCKER_RESOLVED", event_key=f"blocker:{row.id}",
@@ -148,15 +169,16 @@ def update_blocker(blocker_id: int, payload: BlockerUpdate, db: Db, request: Req
         db.flush()
         remaining = db.scalar(select(Blocker.id).where(Blocker.order_id == order_id,
                                                          Blocker.status.in_(ACTIVE)).limit(1))
-        if remaining is None and order.internal_status == "BLOCKED" and order.ozon_status != "cancelled":
+        if remaining is None and order.internal_status == "BLOCKED" and not is_cancelled(order.ozon_status):
             first = db.scalar(select(Blocker.previous_production_status).where(
                 Blocker.order_id == order_id, Blocker.previous_production_status.is_not(None)
             ).order_by(Blocker.id.desc()).limit(1))
             if first:
                 transition(db, order, first, actor.id)
     db.add(OrderTimelineEvent(order_id=order_id, event_type="blocker_updated",
-                              description=f"Проблема #{row.id}: {payload.status}", actor_user_id=actor.id))
+                              description=f"Проблема #{row.id}: {'Решена' if payload.status == 'RESOLVED' else payload.status}"
+                              + (f" · {row.resolution_comment}" if row.resolution_comment else ""), actor_user_id=actor.id))
     db.add(AuditLog(actor_user_id=actor.id, action="blocker.updated", detail=f"{order.posting_number} #{row.id} {payload.status}"))
     db.commit()
     request.app.state.order_events.publish(order_id)
-    return data(db.scalar(select(Blocker).options(joinedload(Blocker.order), selectinload(Blocker.photos)).where(Blocker.id == blocker_id)))
+    return data(db.scalar(blocker_query(db).where(Blocker.id == blocker_id)), photos=db_enabled(db, "photos"))

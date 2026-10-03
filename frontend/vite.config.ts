@@ -14,8 +14,8 @@ export default defineConfig({
         name: 'Ozon Production',
         short_name: 'Production',
         description: 'Управление мебельным производством',
-        theme_color: '#123b5d',
-        background_color: '#f5f8fa',
+        theme_color: '#193f69',
+        background_color: '#f3f5f8',
         display: 'standalone',
         start_url: '/',
         icons: [
@@ -24,6 +24,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        globIgnores: ['**/scanner-*.js', '**/Orders-*.js', '**/ManagerTasks-*.js', '**/Procurement-*.js', '**/Analytics-*.js', '**/PushSettings-*.js', '**/AuditLog-*.js', '**/ProductProfiles-*.js', '**/OzonIntegration-*.js', '**/Notifications-*.js'],
         importScripts: ['/push-worker.js'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
@@ -34,6 +35,7 @@ export default defineConfig({
       },
     }),
   ],
+  build: { rollupOptions: { output: { manualChunks: id => id.includes('@zxing') ? 'scanner' : undefined } } },
   server: { proxy: { '/api': { target: 'http://localhost:8000', changeOrigin: true,
     configure: proxy => proxy.on('proxyReq', request => request.setHeader('Origin', 'http://localhost:8000')) } } },
 })

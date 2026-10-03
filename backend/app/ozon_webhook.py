@@ -25,11 +25,14 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.features import enabled
 from app.manager_tasks import ensure_task, resolve_source
-from app.models import Order, OzonWebhookEvent, utc_now
+from app.models import Order, OzonWebhookEvent, StatusHistory, utc_now
 from app.notifications import emit, manager_ids, sync_deadline_notifications
+from app.orders import production_started
 from app.ozon import OzonError
 from app.ozon_import import diagnostic_json, posting_sync_lock, upsert_posting
+from app.ozon_status import is_cancelled
 
 router = APIRouter(prefix="/api/ozon")
 logger = logging.getLogger(__name__)
@@ -221,7 +224,7 @@ def refresh_projections(db: Session, order: Order, config) -> None:
     tariff_for(order, now)
     priority = priority_for(order, production_profiles(db), priority_settings(db), now)
     aggregate([({"id": order.id, "posting_number": order.posting_number,
-                 "internal_status": "CANCELLED" if order.ozon_status == "cancelled" else order.internal_status},
+                 "internal_status": "CANCELLED" if is_cancelled(order.ozon_status) else order.internal_status},
                 parse_normalized_steps(order.tariff_steps), priority)], now,
               config.organization_timezone, config.money_risk_near_hours,
               tuple(int(h) for h in config.money_risk_cutoff_hours.split(",")))
@@ -232,35 +235,44 @@ def refresh_projections(db: Session, order: Order, config) -> None:
 def apply_posting(db: Session, raw: dict, config, *, from_get: bool = False,
                   actor_id: int | None = None) -> bool:
     """Shared upsert and domain effects for push and reconciliation."""
+    db.info["settings"] = config
     previous = db.scalar(select(Order).where(
         Order.posting_number == raw["posting_number"]).with_for_update())
     created = previous is None
-    was_cancelled = previous is not None and previous.ozon_status == "cancelled"
+    was_cancelled = previous is not None and is_cancelled(previous.ozon_status)
     changed = upsert_posting(db, import_shape(raw) if from_get else raw, is_mock=config.ozon_mock_mode,
                              actor_id=actor_id, source_raw=raw)
     order = db.scalar(select(Order).where(Order.posting_number == raw["posting_number"]))
     recipients = manager_ids(db)
-    if created and order.ozon_status != "cancelled":
+    if created and not is_cancelled(order.ozon_status):
         emit(db, type="NEW_ORDER", event_key=f"order:{order.id}", user_ids=recipients,
              title=f"Новый заказ {order.posting_number}", body="Заказ добавлен в очередь",
              url=f"/orders/{order.id}")
-    if order.ozon_status == "cancelled":
+    if is_cancelled(order.ozon_status):
         if order.assignment is not None:
             recipients.append(order.assignment.user_id)
-        if (order.production_started_at is not None or order.production_completed_at is not None
-                or order.internal_status in ("IN_PRODUCTION", "PRODUCED", "QUALITY_CHECK",
-                                             "PACKING", "READY_TO_SHIP", "HANDED_TO_SHIPPING", "DONE")):
+        started = production_started(order)
+        if started:
             ensure_task(db, source_type="OZON_CANCELLED_AFTER_START", source_id=order.id,
                         order_id=order.id, title=f"Ozon отменил {order.posting_number}",
                         description="Производство уже начато. Проверьте дальнейшие действия.",
                         severity="CRITICAL")
-        if not was_cancelled:
+        if not was_cancelled and started:
             emit(db, type="ORDER_CANCELLED", event_key=f"order:{order.id}",
                  user_ids=recipients, title=f"Отмена {order.posting_number}",
-                 body="Ozon отменил отправление. Проверьте производство.",
+                 body="Ozon отменил отправление после начала производства. "
+                 + f"Артикул: {', '.join(item.offer_id or item.sku or '—' for item in order.items)}. "
+                 + f"Производство: {order.internal_status}. Ответственный: "
+                 + (order.assignment.user.display_name if order.assignment else "не назначен"),
                  url=f"/orders/{order.id}")
     else:
         resolve_source(db, source_type="OZON_CANCELLED_AFTER_START", source_id=order.id)
+        if (not enabled(config, "advanced_workflow") and order.ozon_status in ("delivering", "driver_pickup", "delivered")
+                and order.internal_status not in ("HANDED_TO_SHIPPING", "DONE", "CANCELLED")):
+            old = order.internal_status
+            order.internal_status = "HANDED_TO_SHIPPING"
+            order.handed_to_shipping_at = order.ozon_delivering_date or utc_now()
+            db.add(StatusHistory(order_id=order.id, old_status=old, new_status="HANDED_TO_SHIPPING", changed_by=None))
     if changed:
         refresh_projections(db, order, config)
     return changed
@@ -276,6 +288,7 @@ def _process_one(engine, client, config, events) -> bool:
     event_id = None
     try:
         with Session(engine) as db:
+            db.info["settings"] = config
             event = db.scalar(select(OzonWebhookEvent).where(
                 OzonWebhookEvent.status.in_(("PENDING", "RETRY")),
                 OzonWebhookEvent.next_attempt_at <= utc_now(),
@@ -324,6 +337,7 @@ def _process_one(engine, client, config, events) -> bool:
         if event_id is None:
             return False
         with Session(engine) as db:
+            db.info["settings"] = config
             event = db.scalar(select(OzonWebhookEvent).where(
                 OzonWebhookEvent.id == event_id).with_for_update())
             event.attempts += 1
@@ -335,7 +349,8 @@ def _process_one(engine, client, config, events) -> bool:
                         severity="HIGH")
             emit(db, type="OZON_SYNC_ERROR", event_key=f"webhook:{event.id}",
                  user_ids=manager_ids(db), title="Ошибка Ozon webhook",
-                 body=f"Не удалось обработать событие {event.id}. Код: {safe_code}")
+                 body=f"Не удалось обработать событие {event.id}. Код: {safe_code}",
+                 url="/ozon-integration")
             db.commit()
         try:
             events.publish(0)
@@ -352,6 +367,6 @@ async def processing_loop(engine, client, config, events, stop: asyncio.Event) -
             logger.error("Ozon webhook inbox worker unavailable")
             worked = False
         try:
-            await asyncio.wait_for(stop.wait(), timeout=0.05 if worked else 0.5)
+            await asyncio.wait_for(stop.wait(), timeout=0.05 if worked else 5)
         except TimeoutError:
             pass

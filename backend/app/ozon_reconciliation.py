@@ -13,6 +13,7 @@ from app.models import AuditLog, Order, OzonPostingData, OzonSyncState, utc_now
 from app.notifications import emit, manager_ids
 from app.ozon import OzonError
 from app.ozon_import import import_fbs, posting_sync_lock
+from app.ozon_status import OZON_CANCELLED_STATUSES
 from app.ozon_webhook import apply_posting
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ def _reconcile(engine, client, config, events) -> dict:
         db.commit()
     try:
         with Session(engine) as db:
+            db.info["settings"] = config
             state = state_for(db, config)
             since = attempted_at - timedelta(days=config.ozon_reconciliation_lookback_days)
             if previous_success:
@@ -86,7 +88,7 @@ def _reconcile(engine, client, config, events) -> dict:
             while True:
                 query = select(Order.id, Order.posting_number).where(
                     Order.id > after_id, Order.is_mock == config.ozon_mock_mode,
-                    Order.ozon_status.not_in(("cancelled", "delivered")),
+                    Order.ozon_status.not_in((*OZON_CANCELLED_STATUSES, "delivered")),
                 )
                 if config.ozon_mock_mode:
                     # Local production seed scenarios are not Seller API fixtures.
@@ -113,6 +115,7 @@ def _reconcile(engine, client, config, events) -> dict:
         safe_code = type(exc).__name__ if isinstance(exc, (OzonError, ValidationError)) else "SYNC_ERROR"
         logger.error("Ozon reconciliation failed code=%s", safe_code)
         with Session(engine) as db:
+            db.info["settings"] = config
             state = state_for(db, config)
             new_episode = state.error_code is None
             if new_episode:
@@ -122,13 +125,13 @@ def _reconcile(engine, client, config, events) -> dict:
                                order_id=None, title="Ошибка синхронизации Ozon",
                                description=f"Данные Ozon не обновлены. Код: {safe_code}", severity="HIGH")
             # A new outage reopens the same source task; retries do not undo staff actions.
-            if new_episode:
+            if new_episode and task:
                 task.status, task.resolved_at = "OPEN", None
             emit(db, type="OZON_SYNC_ERROR",
                  event_key=f"reconciliation:{state.id}:{state.error_episode}",
                  user_ids=manager_ids(db), title="Ошибка синхронизации Ozon",
                  body=f"Данные Ozon не обновлены. Код: {safe_code}. Производство доступно.",
-                 url=f"/manager-tasks/{task.id}")
+                 url=f"/manager-tasks/{task.id}" if task else "/ozon-integration")
             db.add(AuditLog(action="ozon.reconciliation.error", detail=safe_code))
             db.commit()
         result = {"error_code": safe_code}

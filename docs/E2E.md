@@ -1,4 +1,104 @@
-# Task 033: end-to-end tests
+# Task 038 final polish follow-up
+
+2026-10-03: final-build production-PWA E2E **12/12 passed**, desktop/mobile,
+retries 0. Visual/accessibility **75/75** at 1440×1000, 1024×768 and 390×844;
+explicit 1440/390 before/after comparisons retained in ignored
+`frontend/e2e-results/ui-review/task-038-final`. Lint/typecheck/build/diff passed.
+User-menu logout is covered by the existing auth scenario; logo/PWA icons are
+served by the actual generated service worker. No backend application changes.
+
+First parallel-suite E2E was 11/12: fixture health could accept a response before
+its own backend was bound, with ECONNREFUSED during startup and wrong-session
+recovery. Readiness now waits for its own successful Uvicorn bind before health.
+Full E2E rerun passed without retries, skips or relaxed assertions. No production
+network/server code changed. Task 034 pending; no deployment/commit/push.
+
+# Task 038: visual refinement verification
+
+2026-10-03: frontend lint/typecheck/build, Ruff app/tests/Alembic/scripts and
+30 relevant backend dashboard/core/performance tests passed. Visual/accessibility
+review **75 states passed** at 1440×1000, 1024×768 and 390×844. Existing 037 checks
+retained; adds P0 exact order, empty Home, fresh/error/stale-expanded Ozon,
+reconnect and profile navigation/Escape/offline regressions. Actual backend mock
+fixtures; only exceptional sync/empty/transport states intercepted in visual review.
+
+Run after build: `UI_REVIEW_PHASE=task-038 node scripts/e2e/review-ui.mjs`
+(PowerShell: `$env:UI_REVIEW_PHASE='task-038'; node scripts/e2e/review-ui.mjs`).
+Screenshots/JSON: ignored `frontend/e2e-results/ui-review/task-038`. Prior `after`
+artifacts remain the task 037 comparison. Independent production-PWA E2E uses the
+actual service worker and synthetic providers, with no retries.
+
+Initial E2E 11/12: worker `/api/auth/me` got 502 from the local Node proxy while
+backend health remained available. Dedicated upstream sockets avoid idle pooled
+socket reuse; transport error codes are retained in fixture logs. No retry or test
+relaxation. Full rerun and final-build rerun both **12/12 passed**, desktop/mobile, retries 0.
+Task 034 remains pending. No deployment, commit or push.
+
+# Task 037: UI polish verification
+
+Final local run, 2026-10-02: **12/12 E2E**, retries 0, actual production PWA,
+desktop 1440×1000 and mobile 390×844. Existing scenario/domain assertions retained;
+queue navigation now reads Заказы, money uses Decimal-string display, problem
+resolution uses the labelled inline form rather than a native prompt.
+Frontend lint/typecheck/build, Ruff and git diff --check passed. No backend change.
+
+After building, run `node scripts/e2e/review-ui.mjs` from frontend for a separate
+design/accessibility smoke review. **57 states passed** at 1440×1000, 1024×768 and
+390×844: main screens, empty/loading/error/offline, normal/long/expanded product,
+active/long/expanded problem, comments/timeline, both cancellations and admin/users/
+Ozon. Checks include overflow, desktop Home fit, first mobile priority/action above
+bottom nav, labels/names, keyboard disclosure/skip link, 44px operational targets,
+shared text contrast ≥4.5:1, reduced motion, autofocus, validation and double-submit.
+
+Full-page and viewport screenshots/JSON: ignored `frontend/e2e-results/ui-review/after`;
+baseline main/admin screenshots: `before`. The review blocks SW only to intercept
+deterministic loading/error transport fixtures; full E2E below runs the actual SW.
+See DESIGN_SYSTEM.md for UI rules and bundle measurements. Physical-phone keyboard,
+safe areas, installation and assistive technology remain task 034 device acceptance.
+Task 034 pending; no production deployment, commit or push.
+
+# Task 036: simplified core end-to-end tests
+
+Run `npm run test:e2e` from frontend. Actual production PWA + normal migrated
+FastAPI application, isolated generated SQLite/uploads, all migrations through
+0024, desktop 1440×1000 and touch mobile 390×844, Europe/Moscow. No retries.
+Use the existing prerequisites/overrides below; E2E_FILTER selects diagnostics.
+ENABLED_OPTIONAL_FEATURES is forced empty. Synthetic admin/second-admin/worker
+use separate contexts; only external Ozon and Telegram sender are replaced.
+Real Telegram queue/loop writes JSONL receipts; no production provider requests.
+
+Last local run, 2026-10-02: **12 passed, 0 failed**, both viewports, retries 0;
+frontend lint/typecheck and production build also passed. Linux/live gates below
+remain unexecuted.
+
+| Scenario, each at both viewports | Checks |
+| --- | --- |
+| Core workflow | TYPE_NEW_POSTING → durable get/upsert → Feed/Queue → atomic claim IN_PRODUCTION → worker comment → shared problem/SSE/badge → queued fake Telegram delivery → worker resolution with provenance/comment → PRODUCED → READY_TO_SHIP → external delivering → HANDED_TO_SHIPPING, replay/no status spam. |
+| Cancellation after start | Critical current card/Home/Feed, no workflow buttons/backend 409, one Telegram with posting/article/stage/assignee despite repeat webhook; admin closes production without another alert. |
+| Cancellation before start | Red Feed, absent active Queue/Home production alert; no ORDER_CANCELLED notice/Telegram. |
+| Auth/RBAC/requests | Admin tools protected, optional routes 404/no optional requests, Home/Queue/Problems each one page HTTP call on navigation, chronological Feed, logout/session/snapshot cleanup. |
+| PWA/offline/fallback | Actual service worker, read-only offline reload, online recovery, actual SSE disconnection + focus fallback, missed change recovered automatically on SSE checkpoint/reconnect, API absent from caches. |
+| Conflict/reconciliation | Competing actual claim → 409 + authoritative state; actual reconciliation discovers orders and updates freshness. |
+
+State-based waits, no uncaught browser errors. Successful visual captures are kept
+in ignored frontend/e2e-results/core-visuals; failures retain screenshots/DOM/traces/
+safe fixture logs. Existing backend legacy suites enable optional flags explicitly;
+new core tests cover actual empty defaults/lifecycle/permissions/tariffs/cancellation.
+Cancellation cases use cancelled on desktop and cancelled_from_split_pending on
+mobile; core backend parametrizes both before/after start. E2E get enrichment uses
+documented v3 string charge/currency; unit/import coverage also verifies v4 Money.
+
+Task 034: `E2E_CONTAINER=true E2E_PROBE=true npm run test:e2e` reuses the new cases
+on isolated Linux PostgreSQL/Caddy HTTPS with guarded volume cleanup/probes.
+Docker unavailable locally; no claim of container/live acceptance. Actual native
+backup→modify→restore→verify, TLS/security/capacity, real Ozon/Telegram and physical
+phone PWA remain launch gates. Push/camera/photos only if extensions are enabled.
+No production deployment/commit/push. Task 034 stays pending.
+
+The former broad scenario specification is preserved below as historical reference.
+Its optional UI flows/30 s polling/disabled Telegram assertions are superseded above.
+
+<details><summary>Historical task 033 E2E runbook</summary>
 
 Run the whole suite from the repository's `frontend` directory:
 
@@ -125,3 +225,5 @@ OS Web Push/Telegram reception, real Ozon credentials and ingress checks require
 the HTTPS deployment. No external production endpoints belong in automated E2E.
 The mandatory isolated Linux backup → modify → restore → verify drill remains
 the existing task 034 launch gate.
+
+</details>

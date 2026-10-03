@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { dateTime, useFeatures } from './features'
 
 type SyncState = {
   enabled: boolean; status: string; error_code: string | null
@@ -7,6 +8,7 @@ type SyncState = {
 }
 
 export function OzonSyncStatus({ refreshToken }: { refreshToken: number }) {
+  const { timezone } = useFeatures()
   const [state, setState] = useState<SyncState | null>(null)
   const [unavailable, setUnavailable] = useState(false)
   useEffect(() => {
@@ -17,13 +19,14 @@ export function OzonSyncStatus({ refreshToken }: { refreshToken: number }) {
       .catch(() => { if (!controller.signal.aborted) setUnavailable(true) })
     return () => controller.abort()
   }, [refreshToken])
-  if (unavailable) return <p role="status" className="mb-4 rounded-xl bg-amber-100 p-3">Не удалось проверить актуальность данных Ozon.</p>
+  if (unavailable) return <p role="status" className="sync-status sync-warning">Не удалось проверить актуальность данных Ozon.</p>
   if (!state) return null
-  return <aside role="status" className={`mb-4 rounded-xl p-3 text-sm ${state.stale || state.status === 'ERROR' ? 'bg-amber-100 text-amber-900' : 'bg-white text-slate-600'}`}>
-    <p>Ozon: {state.last_successful_sync ? `обновлено ${new Date(state.last_successful_sync).toLocaleString('ru-RU')}` : 'успешной синхронизации ещё не было'}{state.age_seconds !== null && ` · ${Math.floor(state.age_seconds / 60)} мин. назад`}</p>
-    {!state.enabled && <p>Периодическая синхронизация отключена.</p>}
-    {state.stale && <p>Данные Ozon устарели. Локальное производство доступно.</p>}
-    {state.status === 'RUNNING' && <p>Синхронизация выполняется…</p>}
-    {state.status === 'ERROR' && <p>Ошибка синхронизации: {state.error_code}. {state.last_attempt_at && `Попытка: ${new Date(state.last_attempt_at).toLocaleString('ru-RU')}`}</p>}
-  </aside>
+  const failed = state.status === 'ERROR'
+  return <details className={`sync-status ${failed ? 'sync-error' : state.stale ? 'sync-warning' : ''}`}>
+    <summary><span className="sync-indicator" aria-hidden="true" /><span role={failed ? 'alert' : 'status'}>{failed ? 'Ошибка синхронизации Ozon' : state.stale ? 'Данные Ozon устарели' : state.status === 'RUNNING' ? 'Ozon · обновляем…' : 'Ozon · данные актуальны'}</span><span className="sync-helper">{state.stale || failed ? 'Локальное производство доступно' : state.age_seconds !== null ? `${Math.floor(state.age_seconds / 60)} мин. назад` : ''}</span><span aria-hidden="true">⌄</span></summary>
+    <div role="status"><p>{state.last_successful_sync ? `Обновлено ${dateTime(state.last_successful_sync, timezone)}` : 'Успешной синхронизации ещё не было.'}</p>
+      {!state.enabled && <p>Периодическая синхронизация отключена.</p>}
+      {failed && <p>Ошибка синхронизации: {state.error_code}. {state.last_attempt_at && `Попытка: ${dateTime(state.last_attempt_at, timezone)}`}</p>}
+    </div>
+  </details>
 }

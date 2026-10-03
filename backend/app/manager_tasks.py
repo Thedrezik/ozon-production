@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.features import db_enabled
 from app.models import ManagerTask, utc_now
 
 SOURCE_TYPES = frozenset({
@@ -23,7 +24,9 @@ STATUSES = ACTIVE_STATUSES | {"RESOLVED", "DISMISSED"}
 
 def ensure_task(db: Session, *, source_type: str, source_id: int, order_id: int | None,
                 title: str, description: str, severity: str, due_at=None,
-                prefetched: dict[int, ManagerTask] | None = None) -> ManagerTask:
+                prefetched: dict[int, ManagerTask] | None = None) -> ManagerTask | None:
+    if not db_enabled(db, "manager_tasks"):
+        return None
     if source_type not in SOURCE_TYPES or severity not in SEVERITIES or source_id < 1:
         raise ValueError("Invalid manager task source or severity")
     task = (prefetched.get(source_id) if prefetched is not None else
@@ -48,6 +51,8 @@ def ensure_task(db: Session, *, source_type: str, source_id: int, order_id: int 
 
 
 def resolve_source(db: Session, *, source_type: str, source_id: int) -> ManagerTask | None:
+    if not db_enabled(db, "manager_tasks"):
+        return None
     task = db.scalar(select(ManagerTask).where(ManagerTask.source_type == source_type,
                                                 ManagerTask.source_id == source_id))
     if task is not None and task.status in ACTIVE_STATUSES:

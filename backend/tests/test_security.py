@@ -325,7 +325,7 @@ def test_sse_reauth_deadline_cannot_be_extended_by_events(monkeypatch):
         queue = asyncio.Queue()
         queue.put_nowait(42)
         released = []
-        bus = SimpleNamespace(subscribe=lambda: queue, unsubscribe=lambda item: released.append(item))
+        bus = SimpleNamespace(subscribe=lambda: queue, unsubscribe=lambda item: released.append(item), checkpoint=lambda: "test:1")
 
         async def connected():
             return False
@@ -340,7 +340,7 @@ def test_sse_reauth_deadline_cannot_be_extended_by_events(monkeypatch):
         monkeypatch.setattr(asyncio, "sleep", pause)
         response = await api_orders.events(request, SimpleNamespace(close=lambda: closed.append(True)), (None, None))
         output = [item async for item in response.body_iterator]
-        assert output == [": connected\n\n", "event: orders\ndata: 42\n\n"]
+        assert output == [": connected\n\n", "event: ready\ndata: test:1\n\n", "id: test:1\nevent: orders\ndata: 42\n\n"]
         assert released == [queue]
         assert closed == [True]
 

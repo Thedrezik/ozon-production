@@ -55,6 +55,7 @@ _dummy_hash = hash_password("invalid-password")
 
 def get_db(request: Request):
     with DbSession(request.app.state.engine) as db:
+        db.info["settings"] = request.app.state.settings
         db.info["audit_context"] = {"ip": request.client.host if request.client else None,
                                     "user_agent": redact_text(request.headers.get("user-agent", "")[:512])}
         yield db

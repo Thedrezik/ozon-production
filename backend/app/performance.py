@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.models import Order
+from app.ozon_status import OZON_CANCELLED_STATUSES
 
 BATCH_SIZE = 250
 MAX_OFFSET = 10_000
@@ -23,4 +24,4 @@ def order_batches(db, query):
 def active_orders():
     return select(Order).where(
         Order.internal_status.notin_(("DONE", "CANCELLED", "HANDED_TO_SHIPPING")),
-        Order.ozon_status != "cancelled")
+        Order.ozon_status.notin_(OZON_CANCELLED_STATUSES))

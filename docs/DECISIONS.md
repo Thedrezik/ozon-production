@@ -1,5 +1,38 @@
 # Architecture Decisions
 
+## 036 — Small workshop core with preserved extensions
+
+Supersede default UI/notification/processing choices from 006/016–019/023–026/028;
+preserve historical decisions and source implementations. Core statuses keep
+existing storage codes; atomic claim starts production, shipment comes only from
+verified Ozon logistics. Simple blockers retain stage/provenance; no Manager Tasks
+in core. Cancellation before start stays in chronological Feed; after start stays
+critical until admin disposition, with deduplicated Telegram.
+
+Validated ENABLED_OPTIONAL_FEATURES defaults empty. Gate routers, source task
+creation, optional read-time evaluations and Push/key-expiry lifespan loops; lazy
+frontend chunks are excluded from core precache. Telegram becomes core with three
+events to linked admins, without per-type preferences. No autonomous deadline
+alert promise. One SSE and one 60 s fallback; authenticated 20 s stream reconnect
+does not independently refresh pages. Reconciliation startup + 900 s; inbox 5 s idle.
+SSE epoch/revision checkpoint recovers changes in reconnect gaps/backend restart;
+unchanged reconnect does not reload pages. Bounded queue/coalescing and 20 s auth
+deadline remain; no replay store or broker is introduced.
+
+Real tariff adapter verified in rendered official Seller v4 docs 2026-10-02:
+supplied charge, discount/commission sign, stage end boundaries and explicit next start. No price/rate/
+minimum-derived amount. Consistent timeline or explicit current/next pair; unknown
+inputs stay unpriced. Backfill missing projection on identical snapshot ingestion.
+Verified v3 get: string current/next charge + *_currency_code, versus v4 Money
+objects. Accept explicitly priced no_discount zero, not empty charge; use compatible
+confirmed steps and prefer explicit next start without breaking chronology.
+0024 adds resolution provenance/worker permission/chronological index, no enum
+deletion. Release credential-client SELECT connection before external HTTP.
+
+CORE_WORKFLOW.md/OPTIONAL_FEATURES.md document exact new product and extension
+dependencies. Preserve old PRODUCT/bootstrap as explicitly archived appendices.
+Task 034 pending; no commit/push/production deployment in 036.
+
 ## 035 — Pre-deployment review before deferred VPS acceptance
 
 At the user's explicit instruction, complete task 035 as a local PRODUCT/code

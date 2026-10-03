@@ -7,10 +7,11 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import String, cast, func, literal, or_, select, union_all
+from sqlalchemy import String, and_, cast, func, literal, or_, select, union_all
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.auth import Current, Db, require
+from app.features import db_enabled
 from app.models import (
     Assignment,
     AuditLog,
@@ -28,7 +29,14 @@ from app.models import (
     User,
     utc_now,
 )
-from app.orders import STATUSES, TRANSITIONS, transition
+from app.orders import (
+    CORE_TRANSITIONS,
+    STATUSES,
+    TRANSITIONS,
+    production_started,
+    transition,
+)
+from app.ozon_status import OZON_CANCELLED_STATUSES, is_cancelled
 from app.performance import MAX_OFFSET, order_batches
 from app.priority import LEVELS, PriorityInput, PriorityWeights, evaluate, sort_key
 from app.rbac import user_permissions
@@ -115,7 +123,7 @@ def priority_for(order: Order, profiles: dict, settings: PrioritySettings, now) 
         tariff_impact=max(delta, Decimal(0)) if delta is not None and next_step["currency"] == "RUB" else
         (order.tariff_impact if tariff is None else None),
         order_value=order.order_value,
-        internal_status="CANCELLED" if order.ozon_status == "cancelled" else order.internal_status,
+        internal_status="CANCELLED" if is_cancelled(order.ozon_status) else order.internal_status,
         remaining_minutes=remaining if known else None,
         blocked=order.internal_status == "BLOCKED", override=order.priority_override,
         pinned=order.priority_pinned), now,
@@ -161,6 +169,10 @@ def order_data(order: Order, profiles: dict[tuple[str, str], ProductProductionPr
         "id": order.id, "posting_number": order.posting_number,
         "order_number": order.order_number, "warehouse_id": order.warehouse_id,
         "ozon_status": order.ozon_status, "internal_status": order.internal_status,
+        "received_at": utc(order.ozon_in_process_at or order.created_at),
+        "created_at": utc(order.created_at),
+        "cancelled": is_cancelled(order.ozon_status),
+        "critical_cancellation": is_cancelled(order.ozon_status) and production_started(order) and order.internal_status != "CANCELLED",
         "production_started_at": utc(order.production_started_at),
         "production_completed_at": utc(order.production_completed_at),
         "packing_started_at": utc(order.packing_started_at),
@@ -172,6 +184,7 @@ def order_data(order: Order, profiles: dict[tuple[str, str], ProductProductionPr
         "tariff_deadline": utc(order.tariff_deadline), "priority": priority, "tariff": tariff, "items": [
             {"product_name": item.product_name, "offer_id": item.offer_id, "sku": item.sku,
              "quantity": item.quantity,
+             "price": str(item.price) if item.price is not None else None, "currency": item.currency,
              "production_profile": (
                  {"product_name": profile.product_name, "production_minutes": profile.production_minutes,
                   "packing_minutes": profile.packing_minutes, "complexity": profile.complexity,
@@ -189,6 +202,18 @@ def order_data(order: Order, profiles: dict[tuple[str, str], ProductProductionPr
 def list_statuses(db: Db, _actor: Annotated[User, Depends(require("orders.view"))]) -> list[dict]:
     rows = db.scalars(select(InternalStatus).order_by(InternalStatus.sort_order, InternalStatus.name)).all()
     return [{"code": row.name, "display_name": row.display_name, "sort_order": row.sort_order} for row in rows]
+
+
+@router.get("/feed")
+def feed(db: Db, _actor: Annotated[User, Depends(require("orders.view"))],
+         limit: int = 20, offset: int = 0) -> dict:
+    if not 1 <= limit <= 100 or not 0 <= offset <= MAX_OFFSET:
+        raise HTTPException(422, "Invalid pagination")
+    # A separate chronological history: no active/status/priority filtering.
+    query = order_query().order_by(func.coalesce(Order.ozon_in_process_at, Order.created_at), Order.id)
+    rows = db.scalars(query.offset(offset).limit(limit)).all()
+    return {"items": [order_data(row) for row in rows],
+            "total": db.scalar(select(func.count()).select_from(Order)) or 0}
 
 
 @router.put("/statuses/{code}")
@@ -212,6 +237,7 @@ def list_orders(
     db: Db, _actor: Annotated[User, Depends(require("orders.view"))],
     order_id: int | None = None, status: str | None = None, assigned_user_id: int | None = None,
     blocked: bool | None = None, ready: bool | None = None, overdue: bool | None = None,
+    problems: bool = False, claimable: bool = False,
     priority_level: str | None = None,
     q: str | None = None, ozon_status: str | None = None,
     product: str | None = None, warehouse: str | None = None,
@@ -225,12 +251,22 @@ def list_orders(
         raise HTTPException(422, "Invalid pagination")
     query = select(Order)
     # Exact lookup and explicit cancellation filters retain access to the archive.
-    if order_id is None and ozon_status != "cancelled" and status != "CANCELLED":
-        query = query.where(Order.ozon_status != "cancelled")
-    if order_id is None and status is None and ozon_status is None:
+    if order_id is None and not problems and not is_cancelled(ozon_status) and status != "CANCELLED":
+        visible = Order.ozon_status.notin_(OZON_CANCELLED_STATUSES)
+        if not db_enabled(db, "advanced_workflow"):
+            visible = or_(visible, and_(Order.internal_status != "CANCELLED",
+                or_(Order.production_started_at.is_not(None), Order.production_completed_at.is_not(None),
+                    Order.internal_status.in_(("IN_PRODUCTION", "PRODUCED", "QUALITY_CHECK", "PACKING", "READY_TO_SHIP")))))
+        query = query.where(visible)
+    if order_id is None and not problems and status is None and ozon_status is None:
         query = query.where(Order.internal_status.notin_(("DONE", "CANCELLED", "HANDED_TO_SHIPPING")))
     if order_id is not None:
         query = query.where(Order.id == order_id)
+    if problems:
+        query = query.where(Order.id.in_(select(Blocker.order_id).where(Blocker.status.in_(("OPEN", "IN_PROGRESS")))))
+    if claimable:
+        query = query.where(Order.internal_status.in_(("NEW", "QUEUED", "SENT_TO_PRODUCTION")),
+                            ~Order.id.in_(select(Assignment.order_id)), Order.ozon_status.notin_(OZON_CANCELLED_STATUSES))
     if status:
         query = query.where(Order.internal_status == status)
     if assigned_user_id is not None:
@@ -292,14 +328,25 @@ def list_orders(
                 "current_tariff_cost": None, "next_tariff_cost": None,
                 "delta_to_next_tariff": None, "potential_saving": None, "potential_loss": None}
 
-    return {"items": [order_data(order, profile_map, visible_priority(priority, can_view_finance), visible_tariff(order))
-                      for order, priority in ranked],
+    problem_rows = db.scalars(select(Blocker).options(joinedload(Blocker.creator)).where(Blocker.order_id.in_(orders),
+                             Blocker.status.in_(("OPEN", "IN_PROGRESS"))).order_by(Blocker.id)).all()
+    problems_by_order = {}
+    for problem in problem_rows:
+        problems_by_order.setdefault(problem.order_id, []).append({
+            "id": problem.id, "description": problem.description, "severity": problem.severity,
+            "created_at": problem.created_at.replace(tzinfo=timezone.utc) if problem.created_at.tzinfo is None else problem.created_at,
+            "creator_user_id": problem.creator_user_id,
+            "creator": problem.creator.display_name if problem.creator else "Система"})
+    return {"items": [{**order_data(order, profile_map, visible_priority(priority, can_view_finance), visible_tariff(order)),
+                       "problems": problems_by_order.get(order.id, [])} for order, priority in ranked],
             "total": total}
 
 
 @router.post("/bulk")
 def bulk_action(payload: BulkActionInput, db: Db, request: Request,
                 actor: Annotated[User, Depends(require("orders.view"))]) -> dict:
+    if not db_enabled(db, "bulk_actions"):
+        raise HTTPException(404, "Optional feature disabled")
     permissions = user_permissions(actor)
     required = "orders.assign" if payload.action == "assign" else "orders.change_status"
     if required not in permissions:
@@ -326,14 +373,15 @@ def bulk_action(payload: BulkActionInput, db: Db, request: Request,
         if payload.status == "BLOCKED":
             raise HTTPException(409, "Create a blocker to mark orders blocked")
         for order in orders:
-            if order.ozon_status == "cancelled" and payload.status != "CANCELLED":
+            if is_cancelled(order.ozon_status) and payload.status != "CANCELLED":
                 raise HTTPException(409, "Ozon cancelled this posting; manager review required")
             if order.internal_status == "BLOCKED" and payload.status != "CANCELLED":
                 active = db.scalar(select(Blocker.id).where(Blocker.order_id == order.id, Blocker.status.in_(("OPEN", "IN_PROGRESS"))).limit(1))
                 if active is not None:
                     raise HTTPException(409, f"Resolve active blockers first: {order.posting_number}")
             try:
-                if payload.status not in TRANSITIONS.get(order.internal_status, set()):
+                allowed = TRANSITIONS if db_enabled(db, "advanced_workflow") else CORE_TRANSITIONS
+                if payload.status not in allowed.get(order.internal_status, set()):
                     raise ValueError
             except ValueError:
                 raise HTTPException(409, f"Invalid status transition for {order.posting_number}") from None
@@ -429,6 +477,7 @@ async def events(request: Request, db: Db, _current: Current):
         deadline = asyncio.get_running_loop().time() + 20
         try:
             yield ": connected\n\n"
+            yield f"event: ready\ndata: {bus.checkpoint()}\n\n"
             while not await request.is_disconnected():
                 remaining = deadline - asyncio.get_running_loop().time()
                 if remaining <= 0:
@@ -437,7 +486,7 @@ async def events(request: Request, db: Db, _current: Current):
                     order_id = await asyncio.wait_for(queue.get(), timeout=remaining)
                 except TimeoutError:
                     break  # Reconnect through auth to pick up role/session changes.
-                yield f"event: orders\ndata: {order_id}\n\n"
+                yield f"id: {bus.checkpoint()}\nevent: orders\ndata: {order_id}\n\n"
                 # Coalesce bursts without extending the authentication deadline.
                 await asyncio.sleep(min(0.5, max(0, deadline - asyncio.get_running_loop().time())))
         finally:
@@ -485,6 +534,8 @@ def timeline(order_id: int, db: Db, _actor: Annotated[User, Depends(require("ord
     statuses = db.scalars(select(StatusHistory).options(joinedload(StatusHistory.changed_by_user))
                           .where(StatusHistory.id.in_(ids["status"]))).all()
     status_labels = {row.name: row.display_name for row in db.scalars(select(InternalStatus)).all()}
+    if not db_enabled(db, "advanced_workflow"):
+        status_labels.update(NEW="Новый", IN_PRODUCTION="В работе", PRODUCED="Произведён", READY_TO_SHIP="Упакован", HANDED_TO_SHIPPING="Отгружен")
     events = db.scalars(select(OrderTimelineEvent).options(joinedload(OrderTimelineEvent.actor))
                         .where(OrderTimelineEvent.id.in_(ids["event"]))).all()
     items = [
@@ -495,14 +546,17 @@ def timeline(order_id: int, db: Db, _actor: Annotated[User, Depends(require("ord
         for row in comments
     ] + [
         {"id": f"status-{row.id}", "kind": "system", "event_type": "status_changed",
-         "body": f"Статус изменён: {status_labels.get(row.old_status, '—')} → {status_labels.get(row.new_status, row.new_status)}",
-         "author": None, "created_at": row.changed_at, "mention_user_ids": []} for row in statuses
+         "body": "Заказ получен" if row.old_status is None else f"Статус изменён: {status_labels.get(row.old_status, '—')} → {status_labels.get(row.new_status, row.new_status)}",
+         "author": row.changed_by_user.display_name if row.changed_by_user else None, "created_at": row.changed_at, "mention_user_ids": []} for row in statuses
     ] + [
         {"id": f"event-{row.id}", "kind": "system", "event_type": row.event_type,
          "body": row.description, "author": row.actor.display_name if row.actor else None,
          "created_at": row.created_at, "mention_user_ids": []} for row in events
     ]
     items.sort(key=lambda item: (item["created_at"], item["id"]))
+    for item in items:
+        if item["created_at"].tzinfo is None:
+            item["created_at"] = item["created_at"].replace(tzinfo=timezone.utc)
     return {"items": items, "total": total}
 
 
@@ -536,15 +590,20 @@ def claim(order_id: int, db: Db, actor: Annotated[User, Depends(require("orders.
     order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if order is None:
         raise HTTPException(404, "Order not found")
-    if order.ozon_status == "cancelled" or order.internal_status not in ("NEW", "QUEUED", "SENT_TO_PRODUCTION"):
+    if is_cancelled(order.ozon_status) or order.internal_status not in ("NEW", "QUEUED", "SENT_TO_PRODUCTION"):
         raise HTTPException(409, "Order cannot be claimed")
-    if db.scalar(select(Assignment.id).where(Assignment.order_id == order_id)) is not None:
+    assignment = db.scalar(select(Assignment).where(Assignment.order_id == order_id))
+    if assignment is not None and (assignment.user_id != actor.id or db_enabled(db, "advanced_workflow")):
         raise HTTPException(409, "Order already assigned")
-    db.add(Assignment(order_id=order_id, user_id=actor.id, assigned_by=actor.id))
+    if assignment is None:
+        db.add(Assignment(order_id=order_id, user_id=actor.id, assigned_by=actor.id))
     db.add(OrderTimelineEvent(order_id=order_id, event_type="assignment_changed",
                               description=f"Заказ взял в работу {actor.display_name}", actor_user_id=actor.id))
-    if order.internal_status == "NEW":
-        transition(db, order, "QUEUED", actor.id)
+    if db_enabled(db, "advanced_workflow"):
+        if order.internal_status == "NEW":
+            transition(db, order, "QUEUED", actor.id)
+    else:
+        transition(db, order, "IN_PRODUCTION", actor.id)
     db.add(AuditLog(actor_user_id=actor.id, action="order.claimed", detail=order.posting_number))
     db.commit()
     request.app.state.order_events.publish(order_id)
@@ -590,6 +649,8 @@ def change_status(order_id: int, payload: StatusInput, db: Db, request: Request,
     order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if order is None:
         raise HTTPException(404, "Order not found")
+    if not db_enabled(db, "advanced_workflow") and payload.status in ("HANDED_TO_SHIPPING", "DONE"):
+        raise HTTPException(409, "Shipment is confirmed automatically by Ozon")
     if payload.status == "BLOCKED":
         raise HTTPException(409, "Create a blocker to mark an order blocked")
     if order.internal_status == "BLOCKED" and payload.status != "CANCELLED":

@@ -261,6 +261,8 @@ class Blocker(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     previous_production_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    resolved_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    resolution_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     order: Mapped[Order] = relationship()
     creator: Mapped[User | None] = relationship(foreign_keys=[creator_user_id])
     assignee: Mapped[User | None] = relationship(foreign_keys=[assigned_to])

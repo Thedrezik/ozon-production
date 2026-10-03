@@ -1,5 +1,38 @@
 # Seller API boundary — task 020
 
+## Current tariff boundary — task 036 (2026-10-02)
+
+The web reader returned a redirect loop; the in-app browser loaded the official
+[v4 FBS list](https://docs.ozon.ru/api/seller/#operation/PostingFbsList) and expanded
+postings.tariffication/tariffication_steps. Verified supplied charge is discount/
+surcharge; min_charge is its minimum, not another charge. next_tariff_starts_at
+starts the next tariff; tariff_deadline_at ends a stage and starts the following.
+Official examples use discount and commission. Adapter maps discount to negative
+cost, commission positive; explicitly supplied no_discount zero is supported.
+Unknown type/malformed charge stays cost=None. Empty charge never implies zero.
+
+Also verified [current v3 FBS get](https://docs.ozon.ru/api/seller/#operation/PostingAPI_GetFbsPostingV3):
+current/next tariff_charge are decimal strings with separate
+current/next_tariff_charge_currency_code. Its step charges remain Money objects.
+The adapter accepts both verified formats. Compatible explicitly priced steps
+can supply missing snapshot charge; explicit next_tariff_starts_at takes precedence
+over an end boundary (official v3 example differs by one second), within chronology.
+
+app.ozon_tariff.normalize is now connected to shared import/webhook/reconciliation
+upsert. No price × rate, minimum addition or invented final cost. Inconsistent
+full history falls back to explicit current/next; identical older snapshots receive
+missing projection on ingestion. Raw remains private diagnostic data.
+Descriptions below of an absent tariff adapter/default-disabled sync are superseded:
+core defaults webhook/reconciliation on, interval 900 s, stale 1800 s. Verify real
+credentials/source networks/handshake/delivery in 034; automated tests remain mock.
+The same current v4 status description confirms `delivering` = «доставляется»
+and `driver_pickup` = «у водителя»; neither is the pre-handover `awaiting_deliver`.
+Core maps actual delivery/driver pickup/delivered to internal shipment once.
+Documented cancelled_from_split_pending is also cancellation, not a working parent:
+shared classification covers queue/claim/transitions/problems/risk/alerts/backfill.
+Child postings retain their separate identities. Local closure removes current
+intervention need while preserving red cancellation history and deduplication.
+
 Official documentation checked on 2026-10-01 in the browser at
 [Ozon Seller API](https://docs.ozon.ru/api/seller/). The web reader encountered
 a redirect loop, but the browser loaded the official documentation (version 2.1).

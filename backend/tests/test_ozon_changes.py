@@ -89,7 +89,9 @@ def test_cancellation_preserves_history_and_alerts_worker_and_manager(context, s
         assert len(tasks) == int(status != "NEW")
         assert db.query(ManagerTask).filter_by(source_type="BLOCKER", status="RESOLVED").count() == 1
         notices = db.scalars(select(Notification).where(Notification.type == "ORDER_CANCELLED")).all()
-        assert len(notices) == 2 and worker in {n.user_id for n in notices}
+        assert len(notices) == (0 if status == "NEW" else 2)
+        if status != "NEW":
+            assert worker in {n.user_id for n in notices}
         delta = json.loads(db.scalar(select(AuditLog.detail).where(AuditLog.action == "ozon.posting.changed")))
         assert delta["changes"]["ozon_status"] == {"old": "awaiting_packaging", "new": "cancelled"}
     assert c.client.get("/api/orders").json()["total"] == 0
@@ -120,11 +122,11 @@ def test_deadline_changes_recalculate_priority_risk_and_pending_notices(context,
         for item in order.items:
             db.add(ProductProductionProfile(offer_id=item.offer_id, product_name=item.product_name,
                        production_minutes=20, packing_minutes=10, complexity="LOW"))
-        order.tariff_steps = [
-            {"starts_at": None, "tariff_type": "a", "cost": "0", "currency": "RUB"},
-            {"starts_at": (now + timedelta(hours=10)).isoformat(),
-             "tariff_type": "b", "cost": "120", "currency": "RUB"},
-        ]
+        c.raw["tariffication"] = {"current_tariff_type": "commission", "current_tariff_charge": {"amount": "0", "currency": "RUB"},
+                                  "next_tariff_type": "commission", "next_tariff_charge": {"amount": "120", "currency": "RUB"},
+                                  "next_tariff_starts_at": (now + timedelta(hours=10)).isoformat()}
+        from app.ozon_tariff import normalize
+        order.tariff_steps = normalize(c.raw, now)
         # Add an optional channel delivery for the existing deadline notice.
         old_notice = db.scalar(select(Notification).where(Notification.type == "SHIPMENT_DEADLINE"))
         if old_notice:

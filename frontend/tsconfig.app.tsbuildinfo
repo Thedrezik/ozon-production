@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx"],"version":"5.8.3"}
+{"root":["./src/analytics.tsx","./src/app.tsx","./src/auditlog.tsx","./src/coreorders.tsx","./src/dashboard.tsx","./src/files.tsx","./src/managertasks.tsx","./src/moneyatrisk.tsx","./src/notifications.tsx","./src/offlinequeue.tsx","./src/orders.tsx","./src/ozonintegration.tsx","./src/ozonsyncstatus.tsx","./src/procurement.tsx","./src/productprofiles.tsx","./src/pushsettings.tsx","./src/features.ts","./src/format.ts","./src/main.tsx","./src/offline.ts","./src/ui.tsx"],"version":"5.8.3"}

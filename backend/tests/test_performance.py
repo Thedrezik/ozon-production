@@ -85,7 +85,10 @@ def test_synthetic_key_pages(tmp_path):
                 assert data["throughput"]["produced"] >= size
             if path == "/api/money-at-risk":
                 assert Decimal(data["total"]) >= size * 10
-                detail = client.get("/api/money-at-risk/orders?bucket=next_hours&limit=3&offset=2").json()
+                # A local cutoff/midnight may precede the rolling near-hours end.
+                # Drill into the actual disjoint bucket containing the workload.
+                bucket = next(row["key"] for row in data["buckets"] if row["order_count"] >= size)
+                detail = client.get("/api/money-at-risk/orders", params={"bucket": bucket, "limit": 3, "offset": 2}).json()
                 assert detail["total"] >= size and len(detail["items"]) == 3
                 assert Decimal(detail["amount"]) >= size * 10
         for path in ("/api/orders?limit=101", "/api/orders?offset=-1",

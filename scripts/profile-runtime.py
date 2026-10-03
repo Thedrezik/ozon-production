@@ -13,14 +13,15 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--format", choices=("JPEG", "PNG", "WEBP"), default="JPEG")
 image_format = parser.parse_args().format
 started = time.perf_counter()
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
 from app.config import Settings
 from app.database import Base
 from app.main import create_app
 from app.orders import seed_mock_orders
 from app.photos import compress_image
 from app.rbac import seed_rbac
-from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
 
 
 def peak_rss_mib():

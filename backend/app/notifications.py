@@ -5,6 +5,7 @@ from datetime import timedelta, timezone
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
+from app.features import db_enabled
 from app.models import (
     Notification,
     NotificationDelivery,
@@ -25,6 +26,7 @@ CHANNELS = ("IN_APP", "WEB_PUSH", "TELEGRAM")
 ADMIN_ROLES = ("SUPER_ADMIN", "ADMIN", "MANAGER")
 MANDATORY_ADMIN = frozenset({"ORDER_CANCELLED", "ORDER_OVERDUE", "BLOCKER_CREATED",
                              "OZON_SYNC_ERROR", "API_KEY_EXPIRING"})
+CORE_ALERTS = frozenset({"BLOCKER_CREATED", "ORDER_CANCELLED", "OZON_SYNC_ERROR"})
 
 
 def manager_ids(db: Session) -> list[int]:
@@ -42,10 +44,13 @@ def emit(db: Session, *, type: str, event_key: str, user_ids: list[int],
     """
     if type not in TYPES or not event_key or len(event_key) > 200:
         raise ValueError("Invalid notification event")
+    core = not db_enabled(db, "notification_preferences")
+    if core and type not in CORE_ALERTS:
+        return 0
     recipients = (_context["recipients"] if _context is not None else
                   db.scalars(select(User).where(User.id.in_(set(user_ids)), User.is_active.is_(True))).all())
     ids = [user.id for user in recipients]
-    prefs = [] if _context is not None else db.scalars(select(NotificationPreference).where(
+    prefs = [] if core or _context is not None else db.scalars(select(NotificationPreference).where(
         NotificationPreference.user_id.in_(ids), NotificationPreference.type == type
     )).all()
     enabled = (_context["enabled"].get(type, {}) if _context is not None else
@@ -60,6 +65,10 @@ def emit(db: Session, *, type: str, event_key: str, user_ids: list[int],
         channels = [channel for channel in CHANNELS if
                     (mandatory and channel == "IN_APP") or
                     enabled.get((user.id, channel), channel == "IN_APP")]
+        if core:
+            channels = ["IN_APP"] + (["TELEGRAM"] if mandatory else [])
+        elif not db_enabled(db, "web_push"):
+            channels = [channel for channel in channels if channel != "WEB_PUSH"]
         if not channels:
             continue
         key = f"{type}:{event_key}"
@@ -95,6 +104,8 @@ def sync_deadline_notifications(db: Session, timezone_name: str) -> int:
     No broker or dedicated scheduler is needed yet; stable source keys make
     repeated reads harmless. The order and tariff services own calculations.
     """
+    if not db_enabled(db, "notification_preferences"):
+        return 0
     from app.api_orders import (
         priority_for,
         priority_settings,

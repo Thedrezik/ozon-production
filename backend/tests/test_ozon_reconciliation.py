@@ -217,9 +217,9 @@ def test_staleness_before_first_success_at_threshold_and_mode_isolation(app):
         assert sync_status(db, config, now=NOW)["stale"]
         db.add(OzonSyncState(id=1, status="SUCCESS", last_successful_sync=NOW, last_attempt_at=NOW))
         db.commit()
-        assert not sync_status(db, config, now=NOW + timedelta(seconds=599))["stale"]
-        status = sync_status(db, config, now=NOW + timedelta(seconds=600))
-        assert status["stale"] and status["age_seconds"] == 600
+        assert not sync_status(db, config, now=NOW + timedelta(seconds=config.ozon_stale_after_seconds - 1))["stale"]
+        status = sync_status(db, config, now=NOW + timedelta(seconds=config.ozon_stale_after_seconds))
+        assert status["stale"] and status["age_seconds"] == config.ozon_stale_after_seconds
         config.ozon_mock_mode = True
         assert sync_status(db, config, now=NOW)["last_successful_sync"] is None
 

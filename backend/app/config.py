@@ -24,14 +24,15 @@ class Settings(BaseSettings):
     app_secret: str = Field(default="", repr=False)
     database_url: str = Field(default="postgresql+psycopg://ozon:ozon@localhost:5432/ozon", repr=False)
     organization_timezone: str = "Europe/Moscow"
+    enabled_optional_features: str = ""
     money_risk_near_hours: int = Field(default=2, ge=1, le=24)
     money_risk_cutoff_hours: str = "12,16"
     ozon_mock_mode: bool = True
-    ozon_webhook_enabled: bool = False
-    ozon_reconciliation_enabled: bool = False
-    ozon_reconciliation_interval_seconds: int = Field(default=240, ge=60, le=3600)
+    ozon_webhook_enabled: bool = True
+    ozon_reconciliation_enabled: bool = True
+    ozon_reconciliation_interval_seconds: int = Field(default=900, ge=60, le=3600)
     ozon_reconciliation_lookback_days: int = Field(default=30, ge=1, le=364)
-    ozon_stale_after_seconds: int = Field(default=600, ge=60, le=86400)
+    ozon_stale_after_seconds: int = Field(default=1800, ge=60, le=86400)
     # Exact trusted reverse-proxy peers; never trust arbitrary forwarded headers.
     ozon_webhook_trusted_proxies: str = ""
     upload_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
@@ -93,6 +94,16 @@ class Settings(BaseSettings):
         if not days or any(day < 1 or day > 365 for day in days):
             raise ValueError("Ozon alert days must be between 1 and 365")
         return ",".join(str(day) for day in sorted(set(days), reverse=True))
+
+    @field_validator("enabled_optional_features")
+    @classmethod
+    def valid_features(cls, value: str) -> str:
+        from app.features import OPTIONAL_FEATURES
+
+        names = {part.strip() for part in value.split(",") if part.strip()}
+        if names - OPTIONAL_FEATURES:
+            raise ValueError("Unknown optional feature")
+        return ",".join(sorted(names))
 
 
 @lru_cache

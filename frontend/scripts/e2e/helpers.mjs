@@ -28,9 +28,10 @@ export async function environment() {
   const port = reserve.address().port
   await new Promise(resolve => reserve.close(resolve))
   const env = { ...process.env, APP_ENV: 'test', DATABASE_URL: `sqlite:///${join(directory, 'app.db').replaceAll('\\', '/')}`,
+    ENABLED_OPTIONAL_FEATURES: '',
     OZON_MOCK_MODE: 'true', OZON_WEBHOOK_ENABLED: 'true', OZON_RECONCILIATION_ENABLED: 'false',
     UPLOAD_DIR: join(directory, 'uploads'), OZON_API_KEY: '', OZON_CLIENT_ID: '',
-    TELEGRAM_BOT_TOKEN: '', TELEGRAM_BOT_USERNAME: '', TELEGRAM_WEBHOOK_SECRET: '',
+    TELEGRAM_BOT_TOKEN: 'synthetic-e2e-token', TELEGRAM_BOT_USERNAME: 'synthetic_e2e_bot', TELEGRAM_WEBHOOK_SECRET: 'synthetic-e2e-secret',
     VAPID_PUBLIC_KEY: '', VAPID_PRIVATE_KEY: '', VAPID_SUBJECT: '', PYTHONUTF8: '1' }
   let logs = ''
   const backend = spawn(python, ['-m', 'tests.e2e_server', '--directory', directory, '--port', String(port)], { cwd: join(root, 'backend'), env, windowsHide: true })
@@ -48,10 +49,12 @@ export async function environment() {
         const barrier = beforeClaim; beforeClaim = null
         try { await barrier() } catch { res.writeHead(500); res.end(); return }
       }
-      const upstream = request({ hostname: '127.0.0.1', port, path: req.url, method: req.method, headers: req.headers }, response => {
+      // Do not reuse an upstream socket across Uvicorn's idle keep-alive expiry.
+      // A reset on that boundary otherwise becomes a synthetic 502 (no retries).
+      const upstream = request({ hostname: '127.0.0.1', port, path: req.url, method: req.method, headers: req.headers, agent: false }, response => {
         res.writeHead(response.statusCode, response.headers); response.pipe(res)
       })
-      upstream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end() })
+      upstream.on('error', error => { logs += `\nTest proxy upstream error: ${error.code ?? 'UNKNOWN'}`; if (!res.headersSent) res.writeHead(502); res.end() })
       res.on('close', () => upstream.destroy())
       req.pipe(upstream)
       return
@@ -78,6 +81,9 @@ export async function environment() {
   try {
     await until(async () => {
       if (backend.exitCode !== null) throw new Error(logs)
+      // The released ephemeral port can briefly belong to another fixture.
+      // Wait for our own successful bind before accepting any health response.
+      if (!logs.includes(`Uvicorn running on http://127.0.0.1:${port}`)) return false
       return (await fetch(`${origin}/api/health/ready`)).ok
     }, 'migrated backend readiness', 30000)
     assert.equal((await (await fetch(`${origin}/api/health`)).json()).mock_mode, true)
@@ -101,7 +107,7 @@ export async function login(page, origin, user = 'admin') {
   await page.getByLabel('Логин', { exact: true }).fill(user)
   await page.getByLabel('Пароль', { exact: true }).fill(password(user))
   await page.getByRole('button', { name: 'Войти', exact: true }).click()
-  await page.getByRole('button', { name: 'Очередь', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Заказы', exact: true }).waitFor()
 }
 
 export async function api(page, path, method = 'GET', data, status = 200) {
@@ -120,9 +126,9 @@ export async function order(page, posting = 'MOCK-NEAR-DEADLINE') {
 
 export async function openOrder(page, posting = 'MOCK-NEAR-DEADLINE') {
   const row = await order(page, posting)
-  await page.getByRole('button', { name: 'Очередь', exact: true }).click()
-  await page.getByLabel('Номер отправления или QR payload').fill(`ozon-production:posting:${posting}`)
-  await page.getByRole('button', { name: 'Открыть заказ', exact: true }).click()
+  await page.getByRole('button', { name: 'Заказы', exact: true }).click()
+  await page.getByLabel('Поиск заказов').fill(posting)
+  await page.getByRole('button', { name: 'Найти', exact: true }).click()
   const card = page.locator(`#order-${row.id}`)
   await card.waitFor()
   await until(async () => (await page.locator('article[id^="order-"]').count()) === 1, 'exact order lookup')

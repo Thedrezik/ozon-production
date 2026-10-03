@@ -18,7 +18,7 @@ FIELDS = {
     models.Role: "name",
     models.InternalStatus: "name display_name sort_order",
     models.PrioritySettings: "deadline_weight tariff_weight finance_weight feasibility_weight high_impact_rub high_value_rub",
-    models.Blocker: "order_id type_code severity status assigned_to expected_resolution_at resolved_at previous_production_status",
+    models.Blocker: "order_id type_code severity status assigned_to expected_resolution_at resolved_at previous_production_status resolved_by_user_id",
     models.ManagerTask: "source_type source_id order_id severity status assigned_to due_at resolved_at",
     models.ProcurementTask: "quantity severity status responsible_user_id needed_by ordered_at purchased_at delivered_at cancelled_at",
     models.ProcurementOrderLink: "task_id order_id",

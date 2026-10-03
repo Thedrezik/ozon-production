@@ -27,8 +27,7 @@ def test_blocker_lifecycle_and_permissions(tmp_path):
             payload = {"order_id": order_id, "type_code": "OTHER", "description": "Нет детали"}
             assert worker.post("/api/blockers", headers=worker_headers, json=payload).status_code == 201
             assert worker.post("/api/blockers", headers=worker_headers, json=payload).status_code == 201
-            assert worker.patch("/api/blockers/1", headers=worker_headers,
-                                json={"status": "RESOLVED"}).status_code == 403
+            assert "blockers.resolve" in worker.get("/api/auth/me").json()["permissions"]
         with TestClient(app) as viewer:
             viewer_headers = login(viewer, "viewer", "viewer-password-123")
             assert viewer.get(f"/api/blockers?order_id={order_id}").status_code == 200

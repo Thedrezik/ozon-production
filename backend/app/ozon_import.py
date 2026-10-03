@@ -22,6 +22,7 @@ from app.models import (
     utc_now,
 )
 from app.ozon import OzonClientInterface, OzonResponseError
+from app.ozon_tariff import normalize
 
 # One API process: serialize upstream snapshots and their writes across push,
 # reconciliation and explicit import, so a fetched list cannot undo a newer push.
@@ -152,6 +153,15 @@ def upsert_posting(db: Session, raw: dict, *, is_mock: bool, actor_id: int | Non
     source = raw if source_raw is None else source_raw
     raw_json = diagnostic_json(source)
     if snapshot is not None and snapshot.raw_json == raw_json:
+        observed_at = snapshot.imported_at.replace(tzinfo=timezone.utc)
+        normalized = normalize(source, observed_at)
+        if order.tariff_steps != normalized:
+            order.tariff_steps = normalized
+            order.tariff_impact = None
+            order.tariff_deadline = None
+            db.add(AuditLog(actor_user_id=actor_id, action="ozon.tariff.adapted", detail=f"order:{order.id}"))
+            db.flush()
+            return True
         return False
     # Keep only operational external changes in public history; no raw customer data.
     tracked = {
@@ -193,6 +203,9 @@ def upsert_posting(db: Session, raw: dict, *, is_mock: bool, actor_id: int | Non
         value = source.get(key)
         setattr(snapshot, key, json.loads(diagnostic_json(value), parse_float=str))
     snapshot.imported_at = utc_now()
+    order.tariff_steps = normalize(source, snapshot.imported_at)
+    order.tariff_impact = None
+    order.tariff_deadline = None
     if created_id is not None:
         db.add(StatusHistory(order_id=order.id, old_status=None, new_status="NEW", changed_by=actor_id))
     db.add(AuditLog(actor_user_id=actor_id,

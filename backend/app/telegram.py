@@ -12,6 +12,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.auth import Current, Db
+from app.features import enabled
 from app.models import (
     AuditLog,
     Notification,
@@ -22,6 +23,7 @@ from app.models import (
     User,
     utc_now,
 )
+from app.notifications import CORE_ALERTS, manager_ids
 
 router = APIRouter(prefix="/api/telegram")
 
@@ -128,6 +130,8 @@ def deliver_pending(engine, settings, sender=None):
         return
     sender = sender or _telegram_request
     with Session(engine) as db:
+        core = not enabled(settings, "notification_preferences")
+        admins = set(manager_ids(db)) if core else set()
         rows = db.scalars(
             select(NotificationDelivery)
             .where(
@@ -153,7 +157,7 @@ def deliver_pending(engine, settings, sender=None):
                         NotificationPreference.channel == "TELEGRAM",
                     )
                 )
-                if notice
+                if notice and not core
                 else None
             )
             account = (
@@ -169,8 +173,8 @@ def deliver_pending(engine, settings, sender=None):
                 not user
                 or not user.is_active
                 or not account
-                or not preference
-                or not preference.enabled
+                or (core and (user.id not in admins or notice.type not in CORE_ALERTS))
+                or (not core and (not preference or not preference.enabled))
             ):
                 delivery.status = "SKIPPED"
                 continue
@@ -178,7 +182,7 @@ def deliver_pending(engine, settings, sender=None):
                 notice.url
                 if notice.url
                 and __import__("re").fullmatch(
-                    r"/(?:orders/\d+|manager-tasks/\d+|notifications|procurement)",
+                    r"/(?:orders/\d+|manager-tasks/\d+|notifications|procurement|ozon-integration)",
                     notice.url,
                 )
                 else None

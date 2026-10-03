@@ -1,5 +1,6 @@
 import asyncio
 import threading
+from uuid import uuid4
 
 
 class OrderEvents:
@@ -7,6 +8,12 @@ class OrderEvents:
         self._lock = threading.Lock()
         self._subscribers: set[tuple[asyncio.AbstractEventLoop, asyncio.Queue[int]]] = set()
         self._pending: dict[asyncio.Queue[int], int] = {}
+        self._epoch = uuid4().hex
+        self._revision = 0
+
+    def checkpoint(self) -> str:
+        with self._lock:
+            return f"{self._epoch}:{self._revision}"
 
     def subscribe(self) -> asyncio.Queue[int]:
         queue: asyncio.Queue[int] = asyncio.Queue(maxsize=1)
@@ -32,6 +39,7 @@ class OrderEvents:
             queue.put_nowait(value)
 
         with self._lock:
+            self._revision += 1
             for loop, queue in self._subscribers:
                 scheduled = queue in self._pending
                 self._pending[queue] = order_id

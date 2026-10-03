@@ -25,7 +25,7 @@ from app.cli import create_admin
 from app.config import Settings
 from app.database import create_db_engine
 from app.main import create_app
-from app.models import Role, User
+from app.models import Role, TelegramAccount, User
 from app.orders import seed_mock_orders
 from app.ozon import MockOzonClient
 
@@ -71,10 +71,12 @@ def main():
     engine = create_db_engine(settings.database_url)
     with Session(engine) as db:
         create_admin("admin", "E2E Admin", "e2e-admin-password", db)
-        for name, role in (("worker", "PRODUCTION_WORKER"), ("manager", "MANAGER")):
+        for name, role in (("worker", "PRODUCTION_WORKER"), ("manager", "ADMIN")):
             db.add(User(username=name, display_name=f"E2E {name}",
                         password_hash=hash_password(f"e2e-{name}-password"),
                         roles=[db.scalar(select(Role).where(Role.name == role))]))
+        db.commit()
+        db.add(TelegramAccount(user_id=db.scalar(select(User.id).where(User.username == "admin")), chat_id="100001"))
         db.commit()
         seed_mock_orders(db)
     engine.dispose()
@@ -82,6 +84,9 @@ def main():
     changes = args.directory / "ozon-changes.json"
     changes.write_text("{}", encoding="utf-8")
     app = create_app(settings)
+    def telegram_sender(_token, _chat, text, _url):
+        with (args.directory / "telegram.jsonl").open("a", encoding="utf-8") as file:
+            file.write(json.dumps({"text": text}, ensure_ascii=False) + "\n")
     original_lifespan = app.router.lifespan_context
     from contextlib import asynccontextmanager
 
@@ -89,7 +94,8 @@ def main():
     async def lifespan(application):
         # Substitute only the existing external adapter, before lifespan workers
         # capture it. Routes, persistence and all domain effects stay real.
-        with patch("app.main.ManagedOzonClient", lambda _engine, _config: FixtureOzonClient(changes)):
+        with (patch("app.main.ManagedOzonClient", lambda _engine, _config: FixtureOzonClient(changes)),
+              patch("app.telegram._telegram_request", telegram_sender)):
             async with original_lifespan(application):
                 yield
 

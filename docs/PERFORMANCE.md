@@ -1,5 +1,50 @@
 # Task 032 — Small VPS performance
 
+## Task 036 core measurement (2026-10-02)
+
+Reproduce from repository root:
+`backend/.venv/Scripts/python.exe scripts/profile-core-runtime.py`.
+Fresh temporary SQLite, synthetic seed + actual mock reconciliation, empty optional
+flags. Only provider boundaries are replaced; actual lifespan inbox/reconciliation/
+Telegram loops run. No deployment database, credentials or external calls.
+
+20 seconds after startup reconciliation: 6 background SQL statements, CPU reported
+0.00 seconds (below Windows process timer resolution; not proof of zero activity),
+peak process RSS 131.00 MiB. This includes TestClient/runtime and an empty Telegram
+delivery queue, not browser/SSE traffic or delivery load. Repeat on Linux under load.
+
+| Core request, 8 synthetic orders | SQL including auth | Local ms |
+| --- | ---: | ---: |
+| Home dashboard, including critical problems | 16 | 42.58 |
+| Queue | 14 | 23.41 |
+| Chronological Feed | 7 | 12.01 |
+| Problems (empty) | 5 | 7.05 |
+| Problem badge | 5 | 6.50 |
+| Sync state | 5 | 7.15 |
+
+Browser E2E measured Home/Queue/Problems navigation at one page API request each;
+already mounted badge/sync-state do not reload on navigation. Initial authenticated
+mount/shared invalidation performs page + badge + sync-state reads (three data
+requests); session/config/health and the SSE handshake are separate. SSE reconnect
+does not invalidate unchanged pages; epoch/revision recovers missed changes after
+reconnect/restart. Its auth check remains. One shared 60-second fallback,
+focus/online and actual mutations/events can invalidate data. No optional requests.
+
+Production build: main JS 279.67 kB / gzip 84.95 kB, CSS 17.89 kB / gzip 4.47 kB.
+Scanner is a separate 416.03 kB / gzip 108.70 kB chunk. Optional chunks are lazy
+and excluded from core PWA precache: 12 entries, 300.12 KiB versus the initial
+18 entries / 761.05 KiB. Extensions remain available to load online when enabled.
+
+Core background loops: inbox idle 5 s; reconciliation at startup and 900 s after
+completion; configured Telegram queue 15 s. Push delivery/key expiry are off.
+No procurement overdue/workload/ManagerTask queries in core; no new scheduler.
+Memory configuration unchanged: PostgreSQL/backend/Caddy caps 256/384/96 MiB,
+one backend worker, pool 2+1. Domain provider transactions and real PostgreSQL
+query plans/host reserve/concurrency/CPU/RSS still require task 034 acceptance.
+
+The task 032 measurements below describe the preserved extended implementation.
+Its optional-query/notification statements do not describe core defaults.
+
 Measured locally on Windows on 2026-10-02, using private SQLite databases and
 synthetic orders only. These are comparative application measurements, not Linux
 VPS latency guarantees. No production data or live Ozon calls were used.

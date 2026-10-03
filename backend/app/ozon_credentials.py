@@ -42,15 +42,17 @@ class ManagedOzonClient:
         self.client, self.version = None, None
 
     def _call(self, method, *args, **kwargs):
-        with rotation_lock, Session(self.engine) as db:
-            row = db.get(OzonCredentials, 1)
-            version = row.revision if row and not self.config.ozon_mock_mode else 0
-            if self.client is None or self.version != version:
-                settings = self.config if self.config.ozon_mock_mode else effective_settings(db, self.config)
-                candidate = create_ozon_client(settings)
-                if self.client:
-                    self.client.close()
-                self.client, self.version = candidate, version
+        with rotation_lock:
+            with Session(self.engine) as db:
+                row = db.get(OzonCredentials, 1)
+                version = row.revision if row and not self.config.ozon_mock_mode else 0
+                if self.client is None or self.version != version:
+                    settings = self.config if self.config.ozon_mock_mode else effective_settings(db, self.config)
+                    candidate = create_ozon_client(settings)
+                    if self.client:
+                        self.client.close()
+                    self.client, self.version = candidate, version
+            # Credential reads release their DB slot before external HTTP.
             return getattr(self.client, method)(*args, **kwargs)
 
     def check_connection(self):

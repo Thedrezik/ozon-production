@@ -155,7 +155,7 @@ def test_cancellation_and_distinct_redelivery_have_no_duplicate_tasks_or_notific
         order = db.scalar(select(Order))
         assert order.internal_status == ("IN_PRODUCTION" if started else "NEW")
         assert order.ozon_status == "cancelled"
-        assert db.query(Notification).filter_by(type="ORDER_CANCELLED").count() == 1
+        assert db.query(Notification).filter_by(type="ORDER_CANCELLED").count() == (1 if started else 0)
         assert db.query(ManagerTask).filter_by(source_type="OZON_CANCELLED_AFTER_START").count() == int(started)
         assert db.query(StatusHistory).count() == 1
 

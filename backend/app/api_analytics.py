@@ -18,6 +18,7 @@ from app.models import (
     User,
     utc_now,
 )
+from app.ozon_status import OZON_CANCELLED_STATUSES
 from app.rbac import user_permissions
 
 router = APIRouter(prefix="/api/analytics")
@@ -60,7 +61,7 @@ def analytics(db: Db, request: Request, actor: Annotated[User, Depends(require("
     cutoff = min(utc_now(), upper)
     counts["overdue"] = db.scalar(select(func.count()).select_from(Order).where(
         *period(Order.shipment_deadline), Order.shipment_deadline < cutoff,
-        Order.internal_status != "CANCELLED", Order.ozon_status != "cancelled",
+        Order.internal_status != "CANCELLED", Order.ozon_status.notin_(OZON_CANCELLED_STATUSES),
         (Order.ready_to_ship_at > Order.shipment_deadline) | Order.ready_to_ship_at.is_(None))) or 0
     blockers = [dict(row._mapping) for row in db.execute(select(
         Blocker.type_code, BlockerType.display_name.label("name"), func.count().label("count"),
@@ -100,7 +101,7 @@ def analytics(db: Db, request: Request, actor: Annotated[User, Depends(require("
     active = select(Assignment.user_id, func.count().label("active_orders")).join(
         Order, Order.id == Assignment.order_id).where(
         Order.internal_status.notin_(("DONE", "CANCELLED", "HANDED_TO_SHIPPING")),
-        Order.ozon_status != "cancelled").group_by(Assignment.user_id).subquery()
+        Order.ozon_status.notin_(OZON_CANCELLED_STATUSES)).group_by(Assignment.user_id).subquery()
     workload = select(active.c.user_id, User.display_name.label("name"), active.c.active_orders
                       ).join(User, User.id == active.c.user_id)
     result = {"start": start, "end": end, "timezone": str(zone), "as_of": utc_now(),

@@ -6,15 +6,15 @@ export function OfflineQueue({ reconnecting, retry, forget }: { reconnecting: bo
   useEffect(() => { const timer = window.setInterval(() => tick(value => value + 1), 30_000); return () => window.clearInterval(timer) }, [])
   const snapshot = readQueueSnapshot()
   return <section className="space-y-4">
-    <div role="status" className="rounded-xl border-2 border-amber-600 bg-amber-100 p-4 text-amber-950">
-      <p className="text-xl font-bold">OFFLINE · Нет связи с сервером</p>
+    <div role="status" className="state state-warning">
+      <p className="text-lg font-semibold">OFFLINE · Нет связи с сервером</p>
       <p>Данные могут быть устаревшими. Доступен только просмотр. Изменения не сохраняются и не отправляются позже.</p>
       <p>{reconnecting ? 'Проверяем соединение…' : 'После восстановления связи очередь обновится с сервера.'}</p>
     </div>
-    <button disabled={reconnecting} onClick={retry} className="min-h-12 rounded-xl border bg-white px-4 py-3">Проверить соединение</button>
-    <button onClick={forget} className="min-h-12 rounded-xl border bg-white px-4 py-3">Закрыть и удалить offline-данные</button>
+    <button disabled={reconnecting} onClick={retry} className="btn">Проверить соединение</button>
+    <button onClick={forget} className="btn btn-ghost">Закрыть и удалить offline-данные</button>
     {snapshot ? <>
-      <h2 className="text-xl font-bold">{snapshot.title} · Последняя загруженная страница</h2>
+      <h2 className="text-lg font-semibold">{snapshot.title} · Последняя загруженная страница</h2>
       <p>Последнее успешное обновление: <time dateTime={snapshot.savedAt}>{new Date(snapshot.savedAt).toLocaleString('ru-RU')}</time>. Приоритеты и сроки показаны на этот момент.</p>
       <p className="text-sm">Сохранено {snapshot.items.length} из {snapshot.total} заказов, начиная с {snapshot.offset + 1}. Фильтры и другие страницы недоступны offline. Снимок хранится до часа в этой вкладке.</p>
       {snapshot.items.map(row => <article key={row.posting_number} className="rounded-2xl bg-white p-4 shadow-sm">

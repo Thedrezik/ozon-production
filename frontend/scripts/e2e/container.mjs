@@ -29,7 +29,8 @@ export async function containerEnvironment() {
     POSTGRES_PASSWORD: password, DATABASE_URL: `postgresql+psycopg://ozon:${password}@postgres:5432/ozon`,
     OZON_MOCK_MODE: 'true', OZON_WEBHOOK_ENABLED: 'true', OZON_RECONCILIATION_ENABLED: 'false',
     OZON_CLIENT_ID: '', OZON_API_KEY: '', OZON_CREDENTIALS_MASTER_KEY: '', APP_SECRET: '',
-    TELEGRAM_BOT_TOKEN: '', TELEGRAM_BOT_USERNAME: '', TELEGRAM_WEBHOOK_SECRET: '',
+    ENABLED_OPTIONAL_FEATURES: '',
+    TELEGRAM_BOT_TOKEN: 'synthetic-e2e-token', TELEGRAM_BOT_USERNAME: 'synthetic_e2e_bot', TELEGRAM_WEBHOOK_SECRET: 'synthetic-e2e-secret',
     VAPID_PUBLIC_KEY: '', VAPID_PRIVATE_KEY: '', VAPID_SUBJECT: '', UPLOAD_DIR: '/data/uploads', BACKUP_DIR: '/data/backups', E2E_PROJECT: project }
   const env = { ...process.env, ...values, COMPOSE_ENV_FILES: envFile, COMPOSE_PROJECT_NAME: project }
   await writeFile(envFile, Object.entries(values).map(([key, value]) => `${key}=${value}`).join('\n'), { mode: 0o600 })

@@ -22,7 +22,7 @@ ROLE_PERMISSIONS = {
         "procurement.create", "procurement.manage", "finance.view", "users.view",
         "analytics.view", "manager_tasks.view", "manager_tasks.manage",
     ),
-    "PRODUCTION_WORKER": ("orders.view", "orders.change_status", "comments.create", "blockers.create"),
+    "PRODUCTION_WORKER": ("orders.view", "orders.change_status", "comments.create", "blockers.create", "blockers.resolve"),
     "PACKER": ("orders.view", "orders.change_status", "comments.create", "blockers.create"),
     "PURCHASER": ("orders.view", "comments.create", "procurement.view", "procurement.create", "procurement.manage"),
     "VIEWER": ("orders.view",),

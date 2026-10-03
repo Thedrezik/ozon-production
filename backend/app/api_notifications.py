@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.auth import Current, Db
+from app.features import db_enabled
 from app.models import AuditLog, Notification, NotificationPreference, utc_now
 from app.notifications import (
     ADMIN_ROLES,
@@ -61,6 +62,8 @@ def mark_read(notification_id: int, db: Db, current: Current) -> dict:
 
 @router.get("/preferences")
 def preferences(db: Db, current: Current) -> dict:
+    if not db_enabled(db, "notification_preferences"):
+        raise HTTPException(404, "Optional feature disabled")
     user, _ = current
     rows = db.scalars(select(NotificationPreference).where(NotificationPreference.user_id == user.id)).all()
     return {"types": TYPES, "channels": CHANNELS,
@@ -70,6 +73,8 @@ def preferences(db: Db, current: Current) -> dict:
 
 @router.put("/preferences")
 def set_preference(payload: PreferenceInput, db: Db, current: Current) -> dict:
+    if not db_enabled(db, "notification_preferences"):
+        raise HTTPException(404, "Optional feature disabled")
     user, _ = current
     if payload.type not in TYPES or payload.channel not in CHANNELS:
         raise HTTPException(422, "Unknown notification type or channel")
