@@ -15,7 +15,7 @@ Existing tables, rows, code and historical decisions remain intact.
 | bulk_actions | Bulk API and legacy selection/actions | Add bulk_actions,advanced_workflow; backend RBAC and confirmation remain. |
 | notification_preferences | Granular preference API/UI, non-core notices and read-triggered deadline evaluation | Add notification_preferences. This restores explicit external opt-ins instead of mandatory linked-admin core Telegram. Deadline alerts still depend on reads/changes; no autonomous guarantee. |
 | web_push | Subscription UI/API and lifespan delivery loop | Add web_push,notification_preferences; configure VAPID and opt in. Requires device/HTTPS verification. |
-| key_expiration | Hourly credential expiry evaluator | Add key_expiration,notification_preferences; optionally manager_tasks. Supply manual expires_at. |
+| key_expiration | Hourly credential expiry evaluator | Add key_expiration,notification_preferences; optionally manager_tasks. Verified /v1/roles expiry is saved on rotation; manual expiry only when known. Core Admin warning needs no loop. |
 | advanced_workflow | Extra stages/editor and retained Orders controls | Add advanced_workflow with required flags. Full legacy Orders UI expects manager_tasks,procurement,photos,scanner,bulk_actions; enable that group together. |
 
 Full extension test set:

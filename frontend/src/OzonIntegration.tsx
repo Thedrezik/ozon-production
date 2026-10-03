@@ -38,8 +38,10 @@ export function OzonIntegration({ csrf, refreshToken }: { csrf?: string; refresh
     finally { form.reset(); payload.api_key = null; payload.client_id = null; submitting.current = false; setBusy(false) }
   }
   const date = (value: string | null) => value ? new Date(value).toLocaleString() : 'Нет данных'
+  const expiresSoon = status?.expires_at && new Date(status.expires_at).getTime() <= Date.now() + 14 * 86400000
   return <section className="panel space-y-4">
     <h2 className="text-xl font-semibold">Интеграция Ozon</h2>
+    {expiresSoon && <p role="status" className="rounded-lg bg-amber-50 p-3 text-amber-900">Ключ Ozon истекает {date(status.expires_at)}. Создайте новый ключ в Ozon Seller и сохраните его здесь.</p>}
     {!status && !notice && <Loading />}
     {status && <dl className="space-y-2"><dt>Соединение</dt><dd>{status.connection_state}</dd><dt>Последняя успешная синхронизация</dt><dd>{date(status.last_successful_sync)}</dd><dt>Последний webhook</dt><dd>{date(status.last_webhook)}</dd><dt>Ошибки за 24 часа</dt><dd>{status.recent_error_count}</dd><dt>Ключ проверен</dt><dd>{date(status.checked_at)}</dd><dt>Истекает</dt><dd>{date(status.expires_at)}</dd></dl>}
     <form onSubmit={event => submit(event, true)} className="space-y-3">
@@ -47,7 +49,7 @@ export function OzonIntegration({ csrf, refreshToken }: { csrf?: string; refresh
       <p className="text-sm text-slate-600">Новый ключ проверяется перед сохранением. В Mock Mode проверка обращается к настоящему Ozon API; производство остаётся в Mock Mode.</p>
       <label className="block">Новый Client ID (пусто — сохранить текущий)<input name="client_id" type="password" autoComplete="off" className="mt-1 w-full rounded-lg border p-3" /></label>
       <label className="block">Новый API Key<input name="api_key" type="password" autoComplete="off" required className="mt-1 w-full rounded-lg border p-3" /></label>
-      <label className="block">Срок действия<input name="expires_at" type="datetime-local" className="mt-1 w-full rounded-lg border p-3" /></label>
+      <label className="block">Срок действия из кабинета (необязательно; дата Ozon API имеет приоритет)<input name="expires_at" type="datetime-local" className="mt-1 w-full rounded-lg border p-3" /></label>
       <button disabled={busy || !status?.rotation_available} className="rounded-lg bg-blue-800 px-4 py-3 text-white disabled:opacity-50">Проверить и заменить</button>
       {status && !status.rotation_available && <p>Для замены требуется настройка шифрования на сервере.</p>}
     </form>

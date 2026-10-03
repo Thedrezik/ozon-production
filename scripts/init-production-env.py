@@ -16,8 +16,18 @@ def main():
     parser.add_argument("--release", required=True)
     parser.add_argument("--output", type=Path, default=Path(".env.production"))
     args = parser.parse_args()
-    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", args.domain) or "." not in args.domain:
-        parser.error("domain must be a lowercase DNS hostname without scheme/path/port")
+    try:
+        public_ip = ipaddress.ip_address(args.domain)
+    except ValueError:
+        public_ip = None
+    if public_ip is not None:
+        if public_ip.version != 4 or not public_ip.is_global:
+            parser.error("use a globally routable public IPv4 address")
+    elif (len(args.domain) > 253 or "." not in args.domain
+          or re.fullmatch(r"[0-9.]+", args.domain)
+          or not all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+                     for label in args.domain.split("."))):
+        parser.error("use a public IPv4 or lowercase DNS hostname without scheme/path/port")
     if args.domain in ("example.com", "localhost"):
         parser.error("use the actual application domain")
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,100}", args.release):

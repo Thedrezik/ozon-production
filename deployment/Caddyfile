@@ -1,4 +1,16 @@
+{
+    # IP clients normally omit SNI. Select the single configured certificate.
+    default_sni {$DOMAIN}
+}
+
 {$DOMAIN} {
+    # Explicit public issuer: never fall back to Caddy's local CA for an IP.
+    tls {
+        issuer acme {
+            dir https://acme-v02.api.letsencrypt.org/directory
+            profile shortlived
+        }
+    }
     encode gzip
     header {
         X-Content-Type-Options nosniff

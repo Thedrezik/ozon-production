@@ -19,6 +19,7 @@ cat > "$work/bin/git" <<'SH'
 printf 'git %s\n' "$*" >> "$COMMAND_LOG"
 case "$1" in
   status) : ;;
+  fetch) : ;;
   rev-parse) printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n' ;;
   *) exit 44 ;;
 esac

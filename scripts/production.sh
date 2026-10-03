@@ -58,7 +58,9 @@ case "$action" in
   update)
     [[ $# == 2 ]] || { echo 'Usage: production.sh update RELEASE_REF' >&2; exit 2; }
     [[ -z $(git status --porcelain --untracked-files=no) ]] || { echo 'Tracked working tree must be clean before update.' >&2; exit 1; }
-    # Resolve an already-fetched immutable release BEFORE stopping the old API.
+    # Fetch without changing running code; backup still precedes checkout/build.
+    git fetch --tags origin
+    # Resolve an immutable release BEFORE stopping the old API.
     release=$(git rev-parse --verify "$2^{commit}")
     previous_ref=$(git rev-parse HEAD)
     snapshot
@@ -118,9 +120,10 @@ PY
   stop) "${compose[@]}" stop caddy backend postgres ;;
   restart) "${compose[@]}" restart backend caddy; ready; bash scripts/production-smoke.sh ;;
   status) "${compose[@]}" ps ;;
+  smoke) bash scripts/production-smoke.sh ;;
   logs) "${compose[@]}" logs --tail 100 "${2:-backend}" ;;
   health|readiness)
     endpoint=health; [[ "$action" != readiness ]] || endpoint=health/ready
     "${compose[@]}" exec -T backend python -c 'import os,sys,urllib.request; print(urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8000/api/"+sys.argv[1], headers={"Host":os.environ["DOMAIN"]}), timeout=5).read().decode())' "$endpoint" ;;
-  *) echo 'Commands: deploy, update REF, rollback, status, logs [service], health, readiness, backup, restore FILE, start, stop, restart' >&2; exit 2 ;;
+  *) echo 'Commands: deploy, update REF, rollback, status, logs [service], smoke, health, readiness, backup, restore FILE, start, stop, restart' >&2; exit 2 ;;
 esac

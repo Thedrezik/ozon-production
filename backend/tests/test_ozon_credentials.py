@@ -182,3 +182,33 @@ def test_expiration_normalized_utc(app):
                           json={"expires_at": "2026-12-01T12:00:00+03:00"}).status_code == 200
         with Session(app.state.engine) as db:
             assert db.get(OzonCredentials, 1).expires_at.replace(tzinfo=timezone.utc) == datetime(2026, 12, 1, 9, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize('upstream,expected', [
+    ('2026-12-01T12:00:00+03:00', '2026-12-01T09:00:00+00:00'),
+    (None, None), ('invalid-provider-date', None), ('2026-12-01T09:00:00', None),
+])
+def test_verified_upstream_expiry_and_core_warning_metadata(app, monkeypatch, upstream, expected):
+    app.state.settings.enabled_optional_features = ''
+    def factory(config):
+        return OzonClient(config, transport=httpx.MockTransport(lambda request:
+            httpx.Response(200, json={'roles': [], 'expires_at': upstream})))
+    monkeypatch.setattr('app.api_ozon_credentials.OzonClient', factory)
+    with TestClient(app) as client:
+        headers = login(client)
+        assert client.put('/api/ozon/integration/credentials', headers=headers,
+            json={'client_id': 'new-id', 'api_key': 'new-secret'}).status_code == 200
+        status = client.get('/api/ozon/integration').json()
+        assert status['expires_at'] == expected
+        assert 'new-secret' not in json.dumps(status)
+
+
+def test_upstream_expiry_takes_precedence_over_manual_date(app, monkeypatch):
+    def factory(config):
+        return OzonClient(config, transport=httpx.MockTransport(lambda request:
+            httpx.Response(200, json={'roles': [], 'expires_at': '2026-12-01T09:00:00Z'})))
+    monkeypatch.setattr('app.api_ozon_credentials.OzonClient', factory)
+    with TestClient(app) as client:
+        headers = login(client)
+        assert replace(client, headers, days=30).status_code == 200
+        assert client.get('/api/ozon/integration').json()['expires_at'] == '2026-12-01T09:00:00+00:00'

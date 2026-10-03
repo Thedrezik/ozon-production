@@ -1,5 +1,59 @@
 # Seller API boundary — task 020
 
+## Task 039 — production integration review (2026-10-03)
+
+Official [Seller API](https://docs.ozon.ru/api/seller/) rechecked in the in-app
+browser; web reader fails. No credentials/live account were used. Authorization
+currently states **3 months**, with actual `expires_at` from
+[POST /v1/roles](https://docs.ozon.ru/api/seller/#operation/AccessAPI_RolesByToken).
+Do not infer 90/180 days from save time. Rotation now saves a valid aware upstream
+date in UTC, taking precedence over manual date. Missing/malformed date stays
+unknown unless explicitly supplied by operator. Core Admin Ozon warns within
+14 days on existing refresh, without a new polling/expiry worker. Optional hourly
+alerts stay off with empty flags.
+
+Admin enters Client ID/Api-Key at **Profile → Ozon**, `/ozon-integration`.
+Backend enforces ADMIN/SUPER_ADMIN + settings.manage + CSRF, real read-only check
+before save, Fernet encryption, no key in responses/logs/audit. Failed rotation
+retains old credentials. Master key is supplied privately on VPS and backed up
+separately. A roles connection check authenticates, not every FBS permission.
+
+Minimal method permissions, verify actual `roles[].methods`:
+
+| Need | Access |
+| --- | --- |
+| Connection/expiry | POST /v1/roles |
+| FBS orders/status/reconciliation | POST /v4/posting/fbs/list; POST /v3/posting/fbs/get |
+| Tariffs | Same FBS methods, tariffication/tariffication_steps; no extra financial-write API |
+| Warehouse | warehouse_id in posting; POST /v2/warehouse/list only for separate listing (not called by current product) |
+| Incoming push | No Seller API key sent in callback; register through Seller UI |
+| API push configuration | /v1/notification/check,set,update,enable,list,push-type/list for operator tooling only; app does not call them |
+
+Choose smallest available read-only/custom level exposing FBS reads + roles.
+**Full-write Admin is not required**. Public reference supplies dynamic role/method
+lists (examples Admin/Posting FBS), not a universal named read-only permission
+matrix; do not invent a role name or promise access without checking actual methods.
+Warehouse/financial write and push-configuration write are not needed by app key
+when registration uses Seller UI. App never ships/cancels/changes prices/stocks
+in Ozon. POST does not imply an order mutation.
+
+[Push setup](https://docs.ozon.ru/api/seller/#tag/push_start) requires entering URL,
+Check, Save, selecting types. Initial text says Settings → Notifications; edit/
+status says Settings → Integrations → Push notifications. Notification check API
+accepts required url string, returns is_active/errors. Neither publishes an explicit
+literal-IP permission/prohibition or CA allowlist; a DNS example proves neither.
+`https://PUBLIC_IP/api/ozon/webhook` is **unconfirmed until Seller Check succeeds**
+with a publicly trusted matching IP certificate. Never claim actual acceptance
+without a live check. Free DNS fallback is described in DEPLOYMENT.md, and still
+requires Seller Check; reconciliation stays enabled either way.
+
+Confirmed source ranges unchanged: 195.34.21.0/24, 185.73.192.0/22, 91.223.93.0/24.
+TYPE_PING must return HTTP 200 JSON version/name/UTC time. Subscribe existing
+TYPE_NEW_POSTING, TYPE_POSTING_CANCELLED, TYPE_STATE_CHANGED,
+TYPE_CUTOFF_DATE_CHANGED, TYPE_DELIVERY_DATE_CHANGED. Preserve durable inbox,
+idempotency and existing source/seller checks. Official setup documents suspension
+for failed/slow delivery; inspect Seller delivery status and retain reconciliation.
+
 ## Current tariff boundary — task 036 (2026-10-02)
 
 The web reader returned a redirect loop; the in-app browser loaded the official

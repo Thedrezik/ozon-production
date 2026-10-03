@@ -578,3 +578,23 @@ development. Complete task 030's implementation with passing automated checks;
 require an actual isolated backup → modify → restore → verify drill on the target
 Linux VPS in task 034 before production launch. All DB/upload, retention, cleanup
 and production-volume preservation assertions must pass and be documented there.
+
+## 039 — Public IPv4 HTTPS and minimal Ozon runtime access
+
+Use pinned Caddy 2.11.6 with explicit Let's Encrypt ACME shortlived issuer and
+single-origin default_sni. CertMagic 0.25.6 supports IP issuance; persistent
+Caddy storage provides automatic renewal without another service/timer. Never
+use internal CA or disable TLS verification. Actual public issuance/renewal
+remains task 034. DOMAIN retains its historical name but accepts public IPv4.
+
+Current runtime reads only roles and FBS list/get; warehouse/tariffs are already
+in posting snapshots. Configure push through Seller UI, without requiring a
+full-write application key. Official docs do not explicitly settle bare-IP URL
+acceptance: require Seller Check; free DNS hostname is a documented alternative,
+with unchanged source filters and reconciliation. Do not infer key lifetime:
+save valid /v1/roles expires_at on rotation and show core Admin warning via
+existing refresh. Optional expiration tasks/loops remain disabled by default.
+
+Bootstrap targets fresh Debian 12 x86_64, preserves SSH/swap, and uses official
+Docker apt packages. Build off-host on the 1 GB target; backup before code/image
+switch, migration before startup, guarded restore. No deployment/commit/push in 039.

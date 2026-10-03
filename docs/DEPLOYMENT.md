@@ -1,7 +1,7 @@
-# Production deployment — task 034
+# Production deployment — tasks 039 / 034
 
-Статус на 2026-10-02: конфигурация и команды подготовлены; production **не развёрнут**.
-Task 034 остаётся `pending`: нет доступа к целевому Linux VPS, публичному домену,
+Статус на 2026-10-03: подготовка IP-only выполнена; production **не развёрнут**.
+Task 034 остаётся `pending`: нет доступа к целевому Linux VPS, публичному IPv4,
 и рабочему Docker daemon. Windows предоставляет только служебный WSL
 `docker-desktop`; его CLI отказывает в использовании. Никакого успешного Linux
 restore, PostgreSQL/Caddy запуска или публичного HTTPS здесь не заявлено.
@@ -10,8 +10,8 @@ restore, PostgreSQL/Caddy запуска или публичного HTTPS зд�
 
 Рекомендованная минимальная production-конфигурация: **1 CPU / 1 GB RAM**,
 отдельный Linux VPS с Caddy, одним backend worker и PostgreSQL. Все существующие
-функции сохраняются; review тяжёлой функциональности/lightweight mode выполняется
-позднее отдельным этапом. Redis/Celery и дополнительные сервисы не добавляются.
+core task 036 работает с пустым ENABLED_OPTIONAL_FEATURES; расширения выключены.
+Redis/Celery и дополнительные сервисы не добавляются.
 
 Рабочая схема: публичный HTTPS с auth/RBAC, один backend worker, PostgreSQL,
 Caddy со статической PWA. UI и `/api/*` имеют один origin. Внешний CDN/proxy в
@@ -19,22 +19,20 @@ Caddy со статической PWA. UI и `/api/*` имеют один origin
 
 Нужны Linux, Docker Engine + Compose v2 с `--wait`, Bash, Python 3,
 curl, tar, util-linux/flock, Git. Docker устанавливать по официальной инструкции
-для дистрибутива. Рекомендуемая ОС для приведённых host-команд — Ubuntu 24.04 LTS;
-для другого дистрибутива использовать соответствующие package/firewall команды.
+для дистрибутива. Целевая ОС — Debian 12, x86_64, 1 GiB swap.
 Docker Engine + Compose plugin устанавливать из
-[официального apt repository](https://docs.docker.com/engine/install/ubuntu/).
+[официального apt repository](https://docs.docker.com/engine/install/debian/).
 Первый шаг — SSH и read-only inventory **до** изменения firewall/сервисов:
 
 ```sh
 cat /etc/os-release
 uname -m
 nproc
-free -m
+free -h
 df -h /
-ss -lnt
-ip -4 route
-ip -6 route
 swapon --show
+ss -lntup
+ip -br addr
 # После переноса checkout можно вместо inventory запустить:
 bash scripts/vps-preflight.sh
 ```
@@ -43,6 +41,84 @@ bash scripts/vps-preflight.sh
 проверить сети/маршруты и выбрать две непересекающиеся private Docker-подсети.
 Образы собирать на другой машине и загружать на VPS; Playwright/browser/build
 не включаются в runtime и не запускаются одновременно с production на 1 GB.
+
+### Bootstrap и доставка release — task 039
+
+После inventory перенести `scripts/bootstrap-vps.sh` и публичный SSH key на VPS
+через scp, затем выполнить `sudo bash /tmp/bootstrap-vps.sh deploy /tmp/deploy.pub`.
+Скрипт устанавливает официальный Docker/Compose, создаёт swap при отсутствии,
+сохраняет существующий swap и SSH, включает UFW 80/443, создаёт deploy user
+(sudo/docker) и `/opt/ozon-production`. Не удаляет конфликтующие packages/rules;
+на не-чистом VPS их нужно проверить вручную. Не меняет sshd/root login.
+Docker group фактически даёт root-полномочия. Для sudo нового deploy user задать
+пароль **локально**: `sudo passwd deploy`. Не отправлять пароль агенту.
+Проверить вторую сессию `ssh deploy@PUBLIC_IP` до закрытия первой.
+
+Предпочтительно private GitHub repo с отдельным read-only deploy key:
+
+```sh
+ssh-keygen -t ed25519 -f ~/.ssh/ozon_repo -C ozon-vps-readonly
+cat ~/.ssh/ozon_repo.pub
+```
+
+Добавить только public key в repository → Settings → Deploy keys без Allow write
+access. Private key остаётся на VPS. Проверить host fingerprint по
+[GitHub](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints).
+В `~/.ssh/config` (mode 600) настроить Host github-ozon, HostName github.com,
+User git, IdentityFile ~/.ssh/ozon_repo, IdentitiesOnly yes. Затем:
+
+```sh
+git clone git@github-ozon:OWNER/REPO.git /opt/ozon-production
+cd /opt/ozon-production
+git checkout --detach RELEASE_SHA
+```
+
+Release: checkout → private env generator → перенос готовых образов → Linux
+restore drill → `IMAGE_MODE=existing bash scripts/production.sh deploy`.
+APP_SECRET/DB password/Fernet key создаются генератором прямо в mode-600 файл;
+реальные значения не выводятся. Telegram secret для пустого значения:
+
+```sh
+umask 077
+python3 -c 'import secrets; from pathlib import Path; p=Path(".env.production"); p.write_text(p.read_text().replace("TELEGRAM_WEBHOOK_SECRET=\n", "TELEGRAM_WEBHOOK_SECRET="+secrets.token_hex(32)+"\n"))'
+```
+
+Telegram token/username вводить редактором private env на VPS. VAPID не нужен,
+пока Web Push выключен. Ничего не хранить в VITE variables/build args/Git.
+Fallback без GitHub: scp чистого release archive или rsync без `--delete`,
+исключая `.git`, `.env*`, uploads, backups, deployment-results, node_modules, .venv.
+Образы передавать отдельно. Git update/rollback требует checkout: при scp хранить
+предыдущий release archive/env/images/backup, заменять код при остановленных
+writers; использовать guarded restore. Не передавать рабочую DB/секреты в архиве.
+
+### Доверенный HTTPS без покупного домена
+
+[Let's Encrypt](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability)
+выдаёт публично доверенные IP certificates, `shortlived`, 160 часов.
+Caddy pinned 2.11.6 содержит
+[CertMagic 0.25.6](https://github.com/caddyserver/caddy/blob/v2.11.6/go.mod),
+чей [issuer](https://github.com/caddyserver/certmagic/blob/v0.25.6/acmeissuer.go)
+допускает Let's Encrypt IP issuance. Явный
+[ACME issuer/profile](https://caddyserver.com/docs/caddyfile/directives/tls)
+предотвращает стандартную local CA для IP; `default_sni` выбирает сертификат
+для клиентов без SNI. Отдельный ACME client/timer не нужен. Android/browser
+используют обычный trust store, вручную CA не устанавливать.
+HTTP-01/TLS-ALPN-01 требуют открытых 80/443; DNS-01 для IP не применяется.
+Persistent caddy_data не удалять. После длительного простоя HTTPS восстановится
+только после успешного renewal. На VPS проверить IP SAN/issuer/notAfter, обычный
+curl без `-k` и smoke после первого renewal; мониторить renewal errors в logs.
+Публичное issuance/renewal и физический Android/PWA остаются task 034 acceptance.
+
+Ozon bare IP документально **не подтверждён и не запрещён**: опубликованы URL
+string и DNS-пример без IP-правила. Обязателен Seller Check; заранее не обещать
+ни приём, ни отказ. См. [OZON_API.md](OZON_API.md).
+При отказе запасной вариант без покупки домена: бесплатное имя
+`NAME.duckdns.org`, созданное оператором и направленное на VPS через кабинет
+[DuckDNS](https://www.duckdns.org/spec.jsp). Подтверждена возможность DNS-имени,
+не приём конкретного URL Ozon. Поменять DOMAIN/APP_PUBLIC_URL вместе, restart,
+smoke и Seller Check; заново войти/установить PWA на новом origin.
+Без CDN/tunnel и изменений source-IP trust. Пока push не подключён,
+reconciliation работает каждые 900 s; можно выключить только webhook.
 
 ### Лимиты и бюджет памяти
 
@@ -79,7 +155,7 @@ SSH разрешить на **фактическом** SSH-порту; при с
 Исходящие DNS и HTTPS нужны для ACME, Seller API и включённых провайдеров доставки;
 для загрузки образов нужен доступ к выбранному registry.
 
-Для свежего Ubuntu VPS с одним SSH listener, сохранить текущую SSH-сессию и
+Для свежего Debian 12 VPS с одним SSH listener, сохранить текущую SSH-сессию и
 проверить новую сессию после включения UFW. Сначала разрешить SSH, затем включать
 firewall; не выполнять `ufw reset` и не угадывать SSH-порт:
 
@@ -178,8 +254,8 @@ env: использовать `config --quiet`, не публиковать по
 На VPS в `/opt/ozon-production` после клонирования выбранного release:
 
 ```sh
-# Подставить домен и две предварительно проверенные свободные подсети.
-python3 scripts/init-production-env.py --domain production.company.ru \
+# DOMAIN — сохранённое имя настройки; здесь передать настоящий публичный IPv4.
+python3 scripts/init-production-env.py --domain PUBLIC_IP \
   --proxy-subnet 172.29.40.0/28 --database-subnet 172.29.41.0/28 \
   --release "$(git rev-parse HEAD)"
 chmod 600 .env.production
@@ -196,7 +272,7 @@ URL-encode пароль в DATABASE_URL; POSTGRES_PASSWORD содержит ис
 
 Обязательные env: DOMAIN/APP_PUBLIC_URL, APP_SECRET, POSTGRES_DB/USER/PASSWORD,
 DATABASE_URL, OZON_CREDENTIALS_MASTER_KEY, BACKEND_IMAGE/CADDY_IMAGE,
-PROXY_SUBNET/DATABASE_SUBNET/CADDY_PROXY_IP. DOMAIN — только DNS hostname;
+PROXY_SUBNET/DATABASE_SUBNET/CADDY_PROXY_IP. DOMAIN — public IPv4 или DNS hostname;
 APP_PUBLIC_URL — `https://DOMAIN`. Production Compose принудительно задаёт
 APP_ENV=production, OZON_MOCK_MODE=false, постоянные пути uploads/backups и
 точный Caddy `/32`. Uvicorn работает с `--no-proxy-headers`, одним worker,
@@ -205,8 +281,9 @@ Startup проверяет настройки, HttpOnly/Secure/SameSite=Strict c
 allowed Host/Origin обеспечиваются существующим backend. CORS credentials
 не разрешены: браузер работает с одним origin. Не добавлять `*` origins/proxy CIDR.
 
-Ozon credentials можно задать private env либо сохранить через существующий
-административный экран; сохранённые зашифрованные credentials авторитетны.
+Ozon credentials вводятся через **Профиль → Ozon** (`/ozon-integration`) после
+создания администратора; production template не предлагает plaintext Ozon key.
+Сохранённые зашифрованные credentials авторитетны.
 Master key хранить отдельно от backup; его потеря лишает доступа к сохранённому
 Ozon ключу. Не менять master key без re-encryption. Опциональные VAPID и Telegram
 группы задавать целиком либо оставлять целиком пустыми. Не передавать secrets
@@ -245,9 +322,11 @@ Settings, выполняет Alembic, валидирует Caddy, запуска
 readiness и запускает public smoke. Первый запуск не имеет application backup:
 existing deployment обязан использовать update. До него проверить настройки VPS/firewall.
 
-DNS A/AAAA должны указывать на сервер, включая реально работоспособный IPv6;
-не оставлять неправильную AAAA. Caddy получает/обновляет публичный сертификат и
-перенаправляет HTTP на HTTPS; persistent `/data` обязателен.
+Для IP DNS не нужен. Caddy 2.11.6 использует явный Let's Encrypt ACME issuer,
+`profile shortlived` и `default_sni` для IP-клиентов без SNI. Сертификат имеет
+IP SAN и срок 160 часов; Caddy автоматически renew его, persistent `/data`
+обязателен. HTTP → HTTPS сохраняется. Не использовать local_certs/tls internal.
+При DNS fallback A должна указывать на VPS; ошибочной AAAA быть не должно.
 См. [Caddy Automatic HTTPS](https://caddyserver.com/docs/automatic-https).
 Public smoke использует обычную TLS verification, без `curl -k`.
 
@@ -269,10 +348,11 @@ production volumes. Примеры:
 | Действие | Команда |
 | --- | --- |
 | Статус | `bash scripts/production.sh status` |
+| Bootstrap Debian 12 | `sudo bash /tmp/bootstrap-vps.sh deploy /tmp/deploy.pub` |
 | Backend / proxy / DB logs | `bash scripts/production.sh logs backend` (либо caddy/postgres) |
 | Liveness | `bash scripts/production.sh health` |
 | Database readiness | `bash scripts/production.sh readiness` |
-| Public HTTPS/headers/routes | `bash scripts/production-smoke.sh` |
+| Public HTTPS/headers/routes | `bash scripts/production.sh smoke` |
 | Согласованный backup | `bash scripts/production.sh backup` |
 | Restore | `bash scripts/production.sh restore backup-YYYYMMDDTHHMMSSZ.tar.gz` |
 | Update | `IMAGE_MODE=existing bash scripts/production.sh update RELEASE_REF` |
@@ -280,7 +360,7 @@ production volumes. Примеры:
 | Restart API/proxy | `bash scripts/production.sh restart` |
 | Stop / start | `bash scripts/production.sh stop` / `bash scripts/production.sh start` |
 
-До update получить новый ref (`git fetch origin` без изменения работающего
+Wrapper перед update получает новый ref (`git fetch --tags origin` без изменения работающего
 checkout) и загрузить образы, именованные **полным SHA**, выбранным update.
 Рабочее дерево должно быть чистым. Wrapper сохраняет старый ref/env, останавливает
 Caddy/API/фоновые writers, создаёт backup реальными scripts, записывает имя архива,
@@ -504,7 +584,7 @@ bot/private chat: **manual acceptance pending**.
 
 Для фактического развёртывания подготовить: VPS IPv4 (IPv6 только если настроен),
 ОС/версию/архитектуру, фактические RAM/CPU/disk, SSH user/port и способ доступа
-по ключу, домен и возможность изменения DNS A/AAAA, доступ к provider firewall,
+по ключу, доступ к provider firewall; покупка домена не требуется,
 выбранный tested checkout/SHA и способ передачи образов соответствующей архитектуры.
 Дополнительно: Ozon Client ID/API key/expiration с нужными permissions, при
 включении доставки — Telegram bot/username/secret и VAPID pair/subject, место
@@ -513,7 +593,8 @@ off-server backup и устройство для push/PWA/camera acceptance. Sec
 Для capacity проверки указать ожидаемое число активных заказов, одновременных
 пользователей/SSE и типичный размер фотографий; функции приложения не удаляются.
 
-На Android/iOS: публичный сертификат без предупреждений, manifest/icons/install,
+Android wrapper — отдельная задача после successful deployment и известного
+рабочего HTTPS endpoint. На Android/iOS: публичный сертификат без предупреждений, manifest/icons/install,
 service worker active, touch/mobile viewport, отсутствие горизонтального скролла;
 камера/QR с реальной наклейкой, разрешение/отказ камеры, JPEG upload, Web Push
 permission и OS reception (учесть требования платформы/установленной PWA).

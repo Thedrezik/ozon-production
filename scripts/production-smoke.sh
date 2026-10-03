@@ -18,6 +18,10 @@ trap 'rm -rf -- "$work"' EXIT
 curl --max-time 15 --silent --show-error --dump-header "$work/redirect" --output /dev/null "http://$domain/"
 grep -Eiq '^HTTP/[^ ]+ (301|302|307|308)' "$work/redirect"
 grep -Eiq "^location: https://$domain/" "$work/redirect"
+# First ACME issuance may still be in progress after containers become ready.
+# Normal verification stays enabled; never accept an untrusted certificate.
+curl --retry 12 --retry-delay 5 --retry-all-errors --retry-max-time 180 \
+  --max-time 20 --fail --silent --show-error --output /dev/null "https://$domain/api/health/ready"
 for path in / /queue /sw.js /manifest.webmanifest /api/health /api/health/ready; do
   curl --max-time 20 --fail --silent --show-error --dump-header "$work/headers" --output "$work/body" "https://$domain$path"
   for header in 'x-content-type-options: nosniff' 'x-frame-options: DENY' 'referrer-policy: no-referrer' 'strict-transport-security:' 'content-security-policy:'; do

@@ -10,6 +10,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SecretStr,
+    TypeAdapter,
     ValidationError,
 )
 from sqlalchemy import func, select
@@ -97,7 +98,7 @@ def rotate(payload, request, db, actor):
             candidate = config.model_copy(update=values)
             # Always the real client: mock success must never validate a real replacement.
             with OzonClient(candidate) as client:
-                client.check_connection()
+                connection = client.check_connection()
         except OzonError as exc:
             db.add(AuditLog(actor_user_id=actor.id, action="ozon.credentials.rejected", detail=type(exc).__name__))
             db.commit()
@@ -111,10 +112,18 @@ def rotate(payload, request, db, actor):
             resolve_source(db, source_type="API_KEY_EXPIRING", source_id=row.revision)
             row.revision += 1
         row.encrypted_credentials = encryptor.encrypt(json.dumps(values).encode()).decode()
-        row.expires_at = payload.expires_at.astimezone(timezone.utc) if payload.expires_at else None
+        # Use only a verified upstream date or the operator's explicit date.
+        # Missing/malformed upstream values never imply a guessed lifetime.
+        expiry = payload.expires_at
+        if connection.expires_at:
+            try:
+                expiry = TypeAdapter(AwareDatetime).validate_python(connection.expires_at)
+            except ValidationError:
+                pass
+        row.expires_at = expiry.astimezone(timezone.utc) if expiry else None
         row.checked_at = utc_now()
         db.add(AuditLog(actor_user_id=actor.id, action="ozon.credentials.replaced",
-                        detail=f"revision:{row.revision}; expiration:{payload.expires_at}"))
+                        detail=f"revision:{row.revision}; expiration:{row.expires_at}"))
         db.flush()
         expiration_alerts(db, config)
         db.commit()
