@@ -1,28 +1,14 @@
-# Production deployment — tasks 039 / 034
+# Native Debian production deployment — task 040
 
-Статус на 2026-10-03: подготовка IP-only выполнена; production **не развёрнут**.
-Task 034 остаётся `pending`: нет доступа к целевому Linux VPS, публичному IPv4,
-и рабочему Docker daemon. Windows предоставляет только служебный WSL
-`docker-desktop`; его CLI отказывает в использовании. Никакого успешного Linux
-restore, PostgreSQL/Caddy запуска или публичного HTTPS здесь не заявлено.
+Prepared 2026-10-03; production **not deployed**. Task 034 remains **pending**.
+Docker is allowed only for development/tests. No Docker daemon, Compose, images,
+container networks/limits or named volumes are required by production.
 
-## 1. Отдельный VPS: минимум 1 CPU / 1 GB RAM
+## Target and first step after renting a VPS
 
-Рекомендованная минимальная production-конфигурация: **1 CPU / 1 GB RAM**,
-отдельный Linux VPS с Caddy, одним backend worker и PostgreSQL. Все существующие
-core task 036 работает с пустым ENABLED_OPTIONAL_FEATURES; расширения выключены.
-Redis/Celery и дополнительные сервисы не добавляются.
-
-Рабочая схема: публичный HTTPS с auth/RBAC, один backend worker, PostgreSQL,
-Caddy со статической PWA. UI и `/api/*` имеют один origin. Внешний CDN/proxy в
-этой схеме не предусмотрен: Ozon source IP проверяется на Caddy и backend.
-
-Нужны Linux, Docker Engine + Compose v2 с `--wait`, Bash, Python 3,
-curl, tar, util-linux/flock, Git. Docker устанавливать по официальной инструкции
-для дистрибутива. Целевая ОС — Debian 12, x86_64, 1 GiB swap.
-Docker Engine + Compose plugin устанавливать из
-[официального apt repository](https://docs.docker.com/engine/install/debian/).
-Первый шаг — SSH и read-only inventory **до** изменения firewall/сервисов:
+Dedicated Debian 12, x86_64, 1 CPU, 1 GB RAM, approximately 7 GB SSD,
+public IPv4, 1 GiB emergency swap, approximately 10 FBS orders/day.
+First SSH login: perform this read-only inventory before changing anything:
 
 ```sh
 cat /etc/os-release
@@ -33,596 +19,292 @@ df -h /
 swapon --show
 ss -lntup
 ip -br addr
-# После переноса checkout можно вместо inventory запустить:
-bash scripts/vps-preflight.sh
 ```
 
-До установки Docker команды `docker network ...` не требуются. После установки
-проверить сети/маршруты и выбрать две непересекающиеся private Docker-подсети.
-Образы собирать на другой машине и загружать на VPS; Playwright/browser/build
-не включаются в runtime и не запускаются одновременно с production на 1 GB.
-
-### Bootstrap и доставка release — task 039
-
-После inventory перенести `scripts/bootstrap-vps.sh` и публичный SSH key на VPS
-через scp, затем выполнить `sudo bash /tmp/bootstrap-vps.sh deploy /tmp/deploy.pub`.
-Скрипт устанавливает официальный Docker/Compose, создаёт swap при отсутствии,
-сохраняет существующий swap и SSH, включает UFW 80/443, создаёт deploy user
-(sudo/docker) и `/opt/ozon-production`. Не удаляет конфликтующие packages/rules;
-на не-чистом VPS их нужно проверить вручную. Не меняет sshd/root login.
-Docker group фактически даёт root-полномочия. Для sudo нового deploy user задать
-пароль **локально**: `sudo passwd deploy`. Не отправлять пароль агенту.
-Проверить вторую сессию `ssh deploy@PUBLIC_IP` до закрытия первой.
-
-Предпочтительно private GitHub repo с отдельным read-only deploy key:
-
-```sh
-ssh-keygen -t ed25519 -f ~/.ssh/ozon_repo -C ozon-vps-readonly
-cat ~/.ssh/ozon_repo.pub
-```
-
-Добавить только public key в repository → Settings → Deploy keys без Allow write
-access. Private key остаётся на VPS. Проверить host fingerprint по
-[GitHub](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints).
-В `~/.ssh/config` (mode 600) настроить Host github-ozon, HostName github.com,
-User git, IdentityFile ~/.ssh/ozon_repo, IdentitiesOnly yes. Затем:
-
-```sh
-git clone git@github-ozon:OWNER/REPO.git /opt/ozon-production
-cd /opt/ozon-production
-git checkout --detach RELEASE_SHA
-```
-
-Release: checkout → private env generator → перенос готовых образов → Linux
-restore drill → `IMAGE_MODE=existing bash scripts/production.sh deploy`.
-APP_SECRET/DB password/Fernet key создаются генератором прямо в mode-600 файл;
-реальные значения не выводятся. Telegram secret для пустого значения:
-
-```sh
-umask 077
-python3 -c 'import secrets; from pathlib import Path; p=Path(".env.production"); p.write_text(p.read_text().replace("TELEGRAM_WEBHOOK_SECRET=\n", "TELEGRAM_WEBHOOK_SECRET="+secrets.token_hex(32)+"\n"))'
-```
-
-Telegram token/username вводить редактором private env на VPS. VAPID не нужен,
-пока Web Push выключен. Ничего не хранить в VITE variables/build args/Git.
-Fallback без GitHub: scp чистого release archive или rsync без `--delete`,
-исключая `.git`, `.env*`, uploads, backups, deployment-results, node_modules, .venv.
-Образы передавать отдельно. Git update/rollback требует checkout: при scp хранить
-предыдущий release archive/env/images/backup, заменять код при остановленных
-writers; использовать guarded restore. Не передавать рабочую DB/секреты в архиве.
-
-### Доверенный HTTPS без покупного домена
-
-[Let's Encrypt](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability)
-выдаёт публично доверенные IP certificates, `shortlived`, 160 часов.
-Caddy pinned 2.11.6 содержит
-[CertMagic 0.25.6](https://github.com/caddyserver/caddy/blob/v2.11.6/go.mod),
-чей [issuer](https://github.com/caddyserver/certmagic/blob/v0.25.6/acmeissuer.go)
-допускает Let's Encrypt IP issuance. Явный
-[ACME issuer/profile](https://caddyserver.com/docs/caddyfile/directives/tls)
-предотвращает стандартную local CA для IP; `default_sni` выбирает сертификат
-для клиентов без SNI. Отдельный ACME client/timer не нужен. Android/browser
-используют обычный trust store, вручную CA не устанавливать.
-HTTP-01/TLS-ALPN-01 требуют открытых 80/443; DNS-01 для IP не применяется.
-Persistent caddy_data не удалять. После длительного простоя HTTPS восстановится
-только после успешного renewal. На VPS проверить IP SAN/issuer/notAfter, обычный
-curl без `-k` и smoke после первого renewal; мониторить renewal errors в logs.
-Публичное issuance/renewal и физический Android/PWA остаются task 034 acceptance.
-
-Ozon bare IP документально **не подтверждён и не запрещён**: опубликованы URL
-string и DNS-пример без IP-правила. Обязателен Seller Check; заранее не обещать
-ни приём, ни отказ. См. [OZON_API.md](OZON_API.md).
-При отказе запасной вариант без покупки домена: бесплатное имя
-`NAME.duckdns.org`, созданное оператором и направленное на VPS через кабинет
-[DuckDNS](https://www.duckdns.org/spec.jsp). Подтверждена возможность DNS-имени,
-не приём конкретного URL Ozon. Поменять DOMAIN/APP_PUBLIC_URL вместе, restart,
-smoke и Seller Check; заново войти/установить PWA на новом origin.
-Без CDN/tunnel и изменений source-IP trust. Пока push не подключён,
-reconciliation работает каждые 900 s; можно выключить только webhook.
-
-### Лимиты и бюджет памяти
-
-| Сервис | RAM cap | RAM + swap cap | Максимальный swap | CPU ceiling |
-| --- | --- | --- | --- | --- |
-| PostgreSQL | 256 MiB | 320 MiB | 64 MiB | 0.75 |
-| Backend, 1 worker | 384 MiB | 512 MiB | 128 MiB | 0.75 |
-| Caddy | 96 MiB | 128 MiB | 32 MiB | 0.25 |
-
-RAM caps вместе — **736 MiB**. Для ОС/Docker остаётся приблизительно **218 MiB**
-при десятичном 1 GB либо **288 MiB** при 1 GiB; фактический usable MemTotal ниже
-паспортной памяти — проверить `/proc/meminfo`, MemAvailable и отсутствие OOM.
-CPU ceilings — верхние границы, не резервирование дополнительных CPU; на одном
-CPU процессы делят физический процессор. PIDs cap каждого сервиса — 100.
-PostgreSQL: max_connections=20, shared_buffers=64MB, work_mem=2MB,
-maintenance_work_mem=32MB; pool backend **2 + 1**, connect/pool timeout 3 s,
-один Uvicorn worker. Caddy GOMEMLIMIT=64MiB — мягкая цель Go heap, не отдельный cap.
-
-`memswap_limit` задаёт суммарные RAM+swap; явные caps не позволяют контейнерам
-потреблять весь host swap. Без host swap дополнительные страницы недоступны.
-OOM killer не отключается. Проверить kernel/cgroup swap-limit support через
-`docker info`, фактические limits через inspect и memory/swap peak на VPS.
-См. [Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
-Лимиты — выбранная стартовая конфигурация для 1 GB, её работоспособность ещё
-нужно подтвердить реальной нагрузкой; swap не увеличивает допустимый рабочий RAM.
-
-### Firewall
-
-Входящие порты приложения: **TCP 80** (redirect/ACME) и **TCP 443** (HTTPS,
-Ozon/Telegram callbacks, PWA, SSE). UDP 443 не опубликован; HTTP/3 не требуется.
-SSH разрешить на **фактическом** SSH-порту; при стабильном admin IP ограничить
-его источником также в provider firewall. **8000, 5432, 2019 не открывать**.
-Только Caddy публикует порты.
-Исходящие DNS и HTTPS нужны для ACME, Seller API и включённых провайдеров доставки;
-для загрузки образов нужен доступ к выбранному registry.
-
-Для свежего Debian 12 VPS с одним SSH listener, сохранить текущую SSH-сессию и
-проверить новую сессию после включения UFW. Сначала разрешить SSH, затем включать
-firewall; не выполнять `ufw reset` и не угадывать SSH-порт:
-
-```sh
-sudo apt-get update
-sudo apt-get install -y ufw ca-certificates curl git python3 util-linux
-ssh_port=$(sudo sshd -T | awk '$1 == "port" {print $2; exit}')
-test -n "$ssh_port"
-sudo ufw limit "$ssh_port/tcp"
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw enable
-sudo ufw status verbose
-```
-
-При нескольких SSH listener сначала разрешить каждый используемый SSH-порт.
-Provider firewall должен разрешать те же inbound TCP порты. Если TCP 80/443
-уже заняты другим web-сервисом, разобраться до deploy; wrapper не освобождает
-порты и не меняет firewall автоматически. `PROXY_SUBNET` и `DATABASE_SUBNET`
-выбирать после проверки существующих routes/Docker networks.
-
-Docker может менять forwarding/firewall и обходить обычные UFW INPUT-правила.
-Не отключать Docker iptables; оставить backend/PostgreSQL без published ports.
-См. [официальную документацию Docker](https://docs.docker.com/engine/network/packet-filtering-firewalls/).
-Не считать `ufw status` доказательством внешней недоступности опубликованных портов.
-Проверить с внешней машины SSH и 80/443, отсутствие 8000/5432/2019 и прочих
-непредусмотренных listener; например, `nmap -Pn -sT --open -p- VPS_IP`.
-
-### Swap: рекомендованный аварийный буфер 1 GiB
-
-Для 1 GB RAM рекомендован **1 GiB swap**, если у провайдера он ещё не настроен.
-Он смягчает краткие пики host/maintenance, но не заменяет RAM и не оправдывает
-постоянный paging или build на рабочем VPS. Если swap уже есть, проверить его
-размер и использование, не добавлять второй файл автоматически. Постоянные
-si/so в `vmstat 1`, растущая latency или OOM означают, что capacity gate не пройден.
-
-Ниже команды только для свежего сервера с ext4/XFS, без существующего swap.
-Файл создаётся без перезаписи существующего пути; используется dd, не fallocate
-со sparse/CoW страницами. Для Btrfs/сетевой FS нужен отдельный filesystem-specific
-порядок, этот блок останавливается. Предварительно проверить свободный диск:
-
-```sh
-sudo bash <<'SH'
-set -Eeuo pipefail
-test -z "$(swapon --show --noheadings)" || { echo 'Swap exists; review it instead of adding another file.' >&2; exit 1; }
-if [[ -e /swapfile || -L /swapfile ]]; then echo 'Existing /swapfile will not be overwritten.' >&2; exit 1; fi
-case "$(findmnt -no FSTYPE -T /)" in ext4|xfs) ;; *) echo 'Review filesystem-specific swap setup.' >&2; exit 1 ;; esac
-available=$(df -B1 --output=avail / | tail -n 1)
-test "$available" -ge 2147483648
-(umask 077; set -o noclobber; : > /swapfile)
-dd if=/dev/zero of=/swapfile bs=1M count=1024 status=progress conv=notrunc
-chmod 600 /swapfile
-mkswap /swapfile
-swapon /swapfile
-backup=$(mktemp /etc/fstab.ozon-backup.XXXXXX)
-cp /etc/fstab "$backup"
-if ! awk '$1 == "/swapfile" {found=1} END {exit !found}' /etc/fstab; then
-  printf '/swapfile none swap sw 0 0\n' >> /etc/fstab
-fi
-if ! findmnt --verify --tab-file /etc/fstab; then
-  cp "$backup" /etc/fstab
-  echo 'fstab reverted; swap is active only until reboot. Inspect before proceeding.' >&2
-  exit 1
-fi
-swapon --show
-free -m
-SH
-sudo sysctl -w vm.swappiness=10
-```
-
-Для сохранения swappiness создать новый `/etc/sysctl.d/99-ozon-swappiness.conf`
-через `sudoedit` со строкой `vm.swappiness=10`, предварительно проверив существующие
-sysctl overrides. После `sudo sysctl --system` и планового reboot снова проверить
-`sysctl vm.swappiness` и `swapon --show`. Не выполнять `swapoff` под нагрузкой.
-Обоснование: [swapon filesystem constraints](https://man7.org/linux/man-pages/man8/swapon.8.html)
-и [Linux vm.swappiness](https://docs.kernel.org/admin-guide/sysctl/vm.html).
-
-## 2. Release, env и секреты
-
-Использовать **standalone** `docker-compose.production.yml`, не overlay поверх
-development. Проект всегда `ozon-production`; не менять его имя между обновлениями.
-Данные: `ozon-production_postgres_data`, `_uploads`, `_backups`, `_caddy_data`,
-`_caddy_config`. Последние два сохраняют TLS-состояние. Никогда не применять
-`down -v`, volume prune или удаление этих volumes при update/rollback.
-
-`.env.production.example` — полный список production env; рабочий файл
-`.env.production` исключён из Git и build context. Секреты не нужны при build;
-Caddy получает только DOMAIN и GOMEMLIMIT. Backend получает private env только
-при запуске, PostgreSQL — DB/user/password. Файлы с секретами/backup/master key
-доступны только оператору. Пользователь с доступом к Docker фактически имеет
-административные права. `docker compose config` и `docker inspect` могут раскрыть
-env: использовать `config --quiet`, не публиковать полный вывод.
-
-На VPS в `/opt/ozon-production` после клонирования выбранного release:
-
-```sh
-# DOMAIN — сохранённое имя настройки; здесь передать настоящий публичный IPv4.
-python3 scripts/init-production-env.py --domain PUBLIC_IP \
-  --proxy-subnet 172.29.40.0/28 --database-subnet 172.29.41.0/28 \
-  --release "$(git rev-parse HEAD)"
-chmod 600 .env.production
-docker compose --env-file .env.production -p ozon-production \
-  -f docker-compose.production.yml config --quiet
-```
-
-Генератор не перезаписывает файл, создаёт независимые APP_SECRET, DB password,
-Fernet master key; пароль URL-safe, DATABASE_URL согласован с PostgreSQL.
-`POSTGRES_DB/USER` задаются через env, пароль не hardcode. При ручной настройке
-URL-encode пароль в DATABASE_URL; POSTGRES_PASSWORD содержит исходный пароль.
-Смена DB password в env не меняет пароль существующей PostgreSQL роли: выполнять
-управляемую ротацию в DB и env вместе, не удалять volume.
-
-Обязательные env: DOMAIN/APP_PUBLIC_URL, APP_SECRET, POSTGRES_DB/USER/PASSWORD,
-DATABASE_URL, OZON_CREDENTIALS_MASTER_KEY, BACKEND_IMAGE/CADDY_IMAGE,
-PROXY_SUBNET/DATABASE_SUBNET/CADDY_PROXY_IP. DOMAIN — public IPv4 или DNS hostname;
-APP_PUBLIC_URL — `https://DOMAIN`. Production Compose принудительно задаёт
-APP_ENV=production, OZON_MOCK_MODE=false, постоянные пути uploads/backups и
-точный Caddy `/32`. Uvicorn работает с `--no-proxy-headers`, одним worker,
-без access log/server header; FastAPI debug выключен, API docs отключены.
-Startup проверяет настройки, HttpOnly/Secure/SameSite=Strict cookies и точный
-allowed Host/Origin обеспечиваются существующим backend. CORS credentials
-не разрешены: браузер работает с одним origin. Не добавлять `*` origins/proxy CIDR.
-
-Ozon credentials вводятся через **Профиль → Ozon** (`/ozon-integration`) после
-создания администратора; production template не предлагает plaintext Ozon key.
-Сохранённые зашифрованные credentials авторитетны.
-Master key хранить отдельно от backup; его потеря лишает доступа к сохранённому
-Ozon ключу. Не менять master key без re-encryption. Опциональные VAPID и Telegram
-группы задавать целиком либо оставлять целиком пустыми. Не передавать secrets
-в VITE variables, Docker build args, командную строку curl или business comments.
-
-## 3. Образы и первое развёртывание
-
-Рекомендуется build на отдельной Linux-машине: frontend build ранее достигал
-~428 MiB, лимиты контейнеров не ограничивают builder. На VPS с 1 GB RAM
-не собирать образы одновременно с рабочим приложением. Из checkout того же SHA:
-
-```sh
-release=$(git rev-parse HEAD)
-docker build -t "ozon-backend:$release" backend
-docker build -f deployment/Caddy.Dockerfile -t "ozon-caddy:$release" .
-docker save "ozon-backend:$release" "ozon-caddy:$release" | gzip > release-images.tar.gz
-# Передать архив на VPS по защищённому каналу; затем на VPS:
-gzip -dc release-images.tar.gz | docker load
-release=$(git rev-parse HEAD)
-mkdir -p deployment-results
-set -o pipefail
-DRILL_BACKEND_IMAGE="ozon-backend:$release" bash scripts/backup-restore-drill.sh 2>&1 | tee deployment-results/linux-restore-drill.txt
-# Следующая команда только после exit 0/PASS полного target Linux drill:
-IMAGE_MODE=existing bash scripts/production.sh deploy
-```
-
-Альтернатива: private registry, BACKEND_IMAGE/CADDY_IMAGE с immutable tags/digests,
-`IMAGE_MODE=pull` (default). `IMAGE_MODE=build` допустим только при проверенном
-запасе памяти/окне обслуживания. PostgreSQL берётся из postgres:17-alpine;
-проверять обновления minor/security и отдельно тестировать их на isolated DB.
-Перед production acceptance записать фактические image digests и Git SHA.
-
-`deploy` предназначен для первого запуска и отказывает при существующем DB volume.
-Он проверяет Compose, получает образы, ждёт PostgreSQL, валидирует production
-Settings, выполняет Alembic, валидирует Caddy, запускает backend/Caddy, проверяет
-readiness и запускает public smoke. Первый запуск не имеет application backup:
-existing deployment обязан использовать update. До него проверить настройки VPS/firewall.
-
-Для IP DNS не нужен. Caddy 2.11.6 использует явный Let's Encrypt ACME issuer,
-`profile shortlived` и `default_sni` для IP-клиентов без SNI. Сертификат имеет
-IP SAN и срок 160 часов; Caddy автоматически renew его, persistent `/data`
-обязателен. HTTP → HTTPS сохраняется. Не использовать local_certs/tls internal.
-При DNS fallback A должна указывать на VPS; ошибочной AAAA быть не должно.
-См. [Caddy Automatic HTTPS](https://caddyserver.com/docs/automatic-https).
-Public smoke использует обычную TLS verification, без `curl -k`.
-
-Создать первого администратора интерактивно после миграций:
-
-```sh
-docker compose --env-file .env.production -p ozon-production \
-  -f docker-compose.production.yml exec backend \
-  python -m app.cli create-admin --username admin --display-name 'Руководитель'
-bash scripts/production-smoke.sh
-```
-
-## 4. Update, rollback и повседневные команды
-
-Все команды запускать из checkout на VPS; wrapper фиксирует env/project/Compose,
-использует flock, private state в ignored `deployment-results/private`, не удаляет
-production volumes. Примеры:
-
-| Действие | Команда |
-| --- | --- |
-| Статус | `bash scripts/production.sh status` |
-| Bootstrap Debian 12 | `sudo bash /tmp/bootstrap-vps.sh deploy /tmp/deploy.pub` |
-| Backend / proxy / DB logs | `bash scripts/production.sh logs backend` (либо caddy/postgres) |
-| Liveness | `bash scripts/production.sh health` |
-| Database readiness | `bash scripts/production.sh readiness` |
-| Public HTTPS/headers/routes | `bash scripts/production.sh smoke` |
-| Согласованный backup | `bash scripts/production.sh backup` |
-| Restore | `bash scripts/production.sh restore backup-YYYYMMDDTHHMMSSZ.tar.gz` |
-| Update | `IMAGE_MODE=existing bash scripts/production.sh update RELEASE_REF` |
-| Rollback последнего update | `bash scripts/production.sh rollback` |
-| Restart API/proxy | `bash scripts/production.sh restart` |
-| Stop / start | `bash scripts/production.sh stop` / `bash scripts/production.sh start` |
-
-Wrapper перед update получает новый ref (`git fetch --tags origin` без изменения работающего
-checkout) и загрузить образы, именованные **полным SHA**, выбранным update.
-Рабочее дерево должно быть чистым. Wrapper сохраняет старый ref/env, останавливает
-Caddy/API/фоновые writers, создаёт backup реальными scripts, записывает имя архива,
-переключает checkout, задаёт новые SHA image tags, получает/build образы, выполняет
-миграции и только после успеха запускает API/proxy, readiness и smoke. С custom
-registry edit/prepare release tags отдельно: автоматический update рассчитан на
-локальные `ozon-backend:SHA` / `ozon-caddy:SHA` tags из приведённого build/save flow.
-Если нужен pull/build **после** backup, выбрать соответствующий IMAGE_MODE.
-
-Migration failure оставляет API/proxy остановленными и ненулевой exit code.
-Не запускать старую версию против частично изменённой схемы и не делать слепой
-`alembic downgrade`. Проверить logs и Alembic current, затем устранить причину
-или выполнить rollback. Не удалять snapshot `deployment-results/private` до
-проверенного успешного release; следующая update заменяет snapshot предыдущей.
-
-Rollback останавливает writers, выбирает сохранённый ref/env и спрашивает
-`RESTORE` перед настоящим DB/uploads restore; затем проверяет миграции matching
-release и запускает сервисы. Старые image tags должны оставаться локально доступны.
-`pg_restore --clean` удаляет только объекты из dump; новые таблицы/зависимости,
-созданные неудачной миграцией, могут остаться или блокировать restore. При такой
-ошибке **держать API остановленным**, оценить схему и восстановить snapshot в
-отдельную новую DB согласованной старой версии с контролируемым переключением
-DATABASE_URL. Не удалять исходную DB/volume и не заявлять универсальный rollback
-всех будущих миграций. DB и uploads не имеют общей атомарной транзакции.
-
-`backup` и `restore` оставляют API остановленным: после проверки запустить `start`.
-Backup использует one-off helpers со старым backend image и теми же volumes;
-они не запускают API/scheduler. Retention по умолчанию 14, override RETENTION_COUNT.
-Для ежедневного backup использовать эту consistent команду в maintenance window
-и явный `start` **только после успеха backup**; мониторить ненулевой exit code.
-Copy backup off-VPS, ключи хранить отдельно. См. [BACKUP_RESTORE.md](../BACKUP_RESTORE.md).
-
-## 5. Обязательный реальный Linux restore drill
-
-**До production launch, именно на целевом Linux VPS**:
-
-На 1 GB VPS использовать уже загруженный release image, чтобы drill не запускал
-build. Выполнить до первого production startup; при повторном acceptance в
-maintenance window остановить production через `production.sh stop` (volumes
-сохраняются). Не запускать два полных стека одновременно под host memory budget.
-
-```sh
-release=$(git rev-parse HEAD)
-mkdir -p deployment-results
-set -o pipefail
-DRILL_BACKEND_IMAGE="ozon-backend:$release" bash scripts/backup-restore-drill.sh 2>&1 | tee deployment-results/linux-restore-drill.txt
-```
-
-Команда сама генерирует synthetic env без Ozon/Telegram/VAPID credentials,
-отдельный Compose project и уникальные names для всех пяти volumes. Caddy не
-запускается, порты не публикуются. `check-drill-config.py` проверяет resolved
-volumes, project, mounts, test mode и выключенные providers перед startup,
-destructive restore и cleanup. Снимок **всех** существовавших volumes сравнивается
-после cleanup, новые drill volumes обязаны исчезнуть. Operational volumes ни в
-одном drill-контейнере не монтируются; metadata snapshot сам по себе не является
-сравнением содержимого работающей production DB.
-
-Проверки: migrations; реальный pg_dump; database.dump/uploads.tar.gz/README.txt;
-публикация archive; DB marker `before-backup` → `after-backup` плюс новая строка;
-изменённый original upload плюс новый upload; реальный pg_restore; исходные marker
-и upload восстановлены; post-backup row/upload отсутствуют; ровно два последних
-архива после retention; cleanup только guarded project; прежние volumes сохранены.
-Любой failure блокирует launch, даже если cleanup прошёл. Windows shell regression
-и Windows Docker Desktop drill не заменяют эту проверку.
-
-**Результат: NOT RUN.** Внести сюда и в STATE.md UTC дату, VPS/OS, SHA/digests,
-имя generated project, полный exit code и PASS/FAIL всех пунктов после реального
-запуска. Не отмечать acceptance criterion/task completed до этого.
-
-## 6. Linux containers, PostgreSQL, E2E и ресурсные измерения
-
-На отдельной Linux test-машине с Docker, Node/npm и установленным Chromium:
-
-```sh
-cd frontend
-npm ci
-npx playwright install --with-deps chromium
-cd ..
-bash scripts/container-acceptance.sh
-# Либо только existing E2E runner:
-cd frontend
-E2E_CONTAINER=true E2E_PROBE=true npm run test:e2e
-```
-
-Runner переиспользует все 12 сценариев task 033, создаёт **свежие** PostgreSQL,
-uploads/backups и Caddy volumes для каждого сценария, выполняет миграции и
-отказывает, если DB не пуста. Реальные backend/React PWA/PostgreSQL/Caddy;
-только external Ozon adapter — synthetic. Test-only fault proxy воспроизводит
-503, lost SSE и competing-write barrier, остальные API исполняются приложением.
-Fixtures/tests/fault proxy монтируются только в isolated окружении и не входят
-в production image. Cleanup повторно проверяет resolved mounts/volumes.
-
-HTTPS здесь использует **local internal CA** и явное отключение certificate
-verification только для generated localhost fixture. Это не подтверждение
-публичного ACME. Test-mode webhook source filter ослаблен только в fixture, а
-APP_ENV=test не проверяет Secure cookie behavior. Production cookie/origin/proxy
-контроль выполняется отдельным checklist ниже с unmodified production ingress.
-Не направлять runner на production URL, не подключать real provider credentials.
-
-E2E_PROBE добавляет PostgreSQL migration/index inventory, EXPLAIN (ANALYZE, BUFFERS)
-фактически исполненных queue/dashboard/risk/analytics/audit запросов, 4 параллельных
-клиента/20 reads, DB connection/idle transaction counts. В `deployment-results`
-сохраняются synthetic plans, Docker CPU/cgroup memory и process VmRSS по сервисам.
-Process RSS разделяемой PostgreSQL памяти нельзя просто складывать. Эти замеры
-используют небольшие fixtures; это **не** p95/нагрузочная гарантия для VPS.
-SSE/reconnect проходят browser workflow. Reconciliation вызывается через existing
-service; real background/provider loops проверять отдельно при запуске.
-
-На целевом VPS снять `docker stats --no-stream`, `free -m`, OOM/restart counts,
-connections и responsiveness при реальной рабочей нагрузке и нескольких SSE.
-Сервисные caps PostgreSQL/backend/Caddy: 256/384/96 MiB, один worker, pool 2+1,
-max_connections=20. Учитывать дополнительно Linux/Docker: 736 MiB caps не
-доказывают, что хост с 1 GiB достаточен. EXPLAIN ANALYZE/read benchmarks делать на
-synthetic DB, включая реалистичное количество **активных** заказов; проверить
-sort spill, scan selectivity, audit trigger/row locks, stale transactions и DB
-recovery после restart. Согласовать latency/RSS с [PERFORMANCE.md](PERFORMANCE.md).
-Не добавлять Redis/Celery до измеренного подтверждения необходимости.
-
-После startup на целевом 1 GB VPS записать реальные caps и host pressure, не
-публикуя полный inspect с env:
-
-```sh
-ids=$(docker compose --env-file .env.production -p ozon-production -f docker-compose.production.yml ps -q)
-test -n "$ids"
-docker inspect --format '{{.Name}} RAM={{.HostConfig.Memory}} RAM+swap={{.HostConfig.MemorySwap}} CPU={{.HostConfig.NanoCpus}} OOM={{.State.OOMKilled}} Restarts={{.RestartCount}}' $ids
-docker stats --no-stream $ids
-free -m
-vmstat 1 10
-bash scripts/production.sh readiness
-```
-
-Повторить при нескольких пользователях/SSE, reconciliation/delivery и реальных
-phone uploads. Gate: no OOM/restart, no sustained swap thrashing, healthy readiness
-и приемлемые измеренные latency при заявленном числе активных заказов. Пока этот
-прогон отсутствует, поддержка 1 GB — целевая конфигурация, не успешный acceptance.
-
-## 7. Production security / persistence acceptance
-
-Public smoke автоматически проверяет публичный TLS/redirect, static SPA/PWA,
-health/readiness и mock=false, CSP/nosniff/DENY/no-referrer/HSTS, third-party Origin
-denial и Ozon route 403 с поддельными XFF/source-IP headers. Дополнительно на HTTPS
-в браузере с synthetic/operator test user (credentials не сохранять в отчёт):
-
-- Login/logout Set-Cookie: Secure, HttpOnly, SameSite=Strict, host-only, Path=/api;
-  cookie отсутствует в JS/localStorage. Logout/session revocation действительно
-  запрещают reads, worker не имеет manager/admin permissions.
-- Authenticated POST с отсутствующим/неверным CSRF → 403; корректный CSRF и
-  чужой Origin → 403; cross-origin preflight не содержит allow-origin/credentials.
-  Same-origin production action проходит. Неверный Host при прямом private
-  backend запросе → 400. Поддельный XFF не меняет auth/audit IP.
-- CSP запрещает inline script/frame; `/docs`/`openapi.json` **на private backend**
-  отключены. Public SPA может вернуть shell на произвольный non-API путь, это не
-  API docs. Invalid JSON/422/404/503 не содержат traceback/DB URL/секретов.
-  Проверить API/static error headers и фактическое отсутствие secrets в logs.
-- Header `X-Ozon-Source-IP` перезаписывается Caddy; private backend peer совпадает
-  с CADDY_PROXY_IP, trust только `/32`. Login/audit сознательно используют socket
-  peer Caddy, aggregate rate limit shared; forwarded headers не используются как
-  произвольная идентичность клиента. CDN заголовкам доверие не добавлять.
-- Валидное небольшое JPEG upload/read проходит с RBAC; >UPLOAD_MAX_BYTES
-  отклоняется backend, >21 MB body отклоняется edge; SVG/forged MIME запрещены.
-  Новый comment/order/photo переживают backend/PostgreSQL/Caddy restart; backups
-  остаются в volume. После restart проверить readiness и доступность фото.
-- Два браузера: действие работника обновляет manager через SSE; reconnect,
-  logout/deactivation во время stream, offline→online refresh, no duplicate task.
-- В isolated production-config container проверить startup rejection при
-  placeholder APP_SECRET, неправильном master key/DB password, неверном DOMAIN,
-  broad trusted proxy, неполной Telegram/VAPID группе. Не менять рабочие secrets
-  production ради negative tests; Settings regression tests покрывают это локально.
-
-Проверить внешнюю доступность только предусмотренных портов и новую SSH-сессию.
-Записать результаты firewall проверки с внешней машины.
-
-## 8. Реальный Ozon и внешние уведомления
-
-Публичный URL receiver: `https://DOMAIN/api/ozon/webhook`.
-В admin Ozon Integration задать Client ID/key и expiration, выполнить existing
-connection check (backend `/v1/roles`), затем ограниченный FBS import через
-existing v4 importer. Не использовать account credentials в automated fixtures.
-Проверить отдельные Ozon/Internal Production Status и сохранность истории.
-
-После import включить OZON_RECONCILIATION_ENABLED=true и OZON_WEBHOOK_ENABLED=true,
-перезапустить один backend, проверить sync status/last_success/freshness. В Seller
-Settings → Push notifications настроить URL, выполнить Ozon connection/TYPE_PING
-check и подписаться на поддерживаемые posting new/state/cancelled/cutoff/delivery
-events. Проверить event inbox и обработку, replay без дубликатов, cancellation
-после производства создаёт одну Manager Task, reconciliation восстанавливает
-пропущенные изменения, sync error создаёт/закрывает source-keyed task.
-
-Официальный контракт/source networks были проверены проектом 2026-10-01 и описаны
-в [OZON_API.md](OZON_API.md); web reader 2026-10-02 не смог загрузить официальную
-страницу. Перед включением реального ingress оператор обязан сверить текущий
-[Ozon Seller API push contract](https://docs.ozon.ru/api/seller/#tag/push_start)
-и source networks с обоими allowlists. Не расширять IP filter для ручного curl.
-Обычный внешний curl должен получить 403, Ozon connection check — TYPE_PING 200.
-
-Sync диагностика: admin integration status, last safe error code, Manager Tasks,
-webhook inbox status/attempts/next_retry, `production.sh logs backend`, readiness,
-DNS/time/outbound HTTPS. Секреты/сырые provider exceptions не выводить; после
-устранения причины использовать existing admin event retry и проверить recovery.
-Денежный риск неизвестных Ozon тарифов остаётся unknown; не вычислять его из цены.
-
-Web Push: сгенерировать пару через `python -m app.push_keys` в приватном окружении,
-перенести VAPID_PRIVATE_KEY/PUBLIC_KEY/SUBJECT в backend env, restart; проверить
-public-key config (private key отсутствует), subscribe конкретного HTTPS устройства,
-permission, opt-in, production blocker/deadline notice, delivery row→SENT и OS
-reception/deep link. Проверить expired subscription cleanup/retry; не логировать
-push endpoint. Without device/keys: **manual acceptance pending**.
-
-Telegram: задать полную группу env; в приватном operator script/API client вызвать
-Telegram `setWebhook` с `url=https://DOMAIN/api/telegram/webhook` и secret_token;
-token не помещать в history/логи/командные аргументы. Сверить webhook status через
-`getWebhookInfo`, bind через существующий one-time deep link, wrong secret → 403,
-correct callback→binding, opted-in delivery→SENT и сообщение/deep link, unlink.
-Engine использует существующие notification_deliveries, bounded retries; проверить
-FAILED/next_attempt_at и in-app notice независимо от внешней доставки. Without
-bot/private chat: **manual acceptance pending**.
-Контракт настройки: [Telegram setWebhook](https://core.telegram.org/bots/api#setwebhook)
-и [getWebhookInfo](https://core.telegram.org/bots/api#getwebhookinfo).
-
-## 9. Физический телефон и запись acceptance
-
-Для фактического развёртывания подготовить: VPS IPv4 (IPv6 только если настроен),
-ОС/версию/архитектуру, фактические RAM/CPU/disk, SSH user/port и способ доступа
-по ключу, доступ к provider firewall; покупка домена не требуется,
-выбранный tested checkout/SHA и способ передачи образов соответствующей архитектуры.
-Дополнительно: Ozon Client ID/API key/expiration с нужными permissions, при
-включении доставки — Telegram bot/username/secret и VAPID pair/subject, место
-off-server backup и устройство для push/PWA/camera acceptance. Secrets вводить
-непосредственно в private env/admin screen, не хранить в deployment evidence.
-Для capacity проверки указать ожидаемое число активных заказов, одновременных
-пользователей/SSE и типичный размер фотографий; функции приложения не удаляются.
-
-Android wrapper — отдельная задача после successful deployment и известного
-рабочего HTTPS endpoint. На Android/iOS: публичный сертификат без предупреждений, manifest/icons/install,
-service worker active, touch/mobile viewport, отсутствие горизонтального скролла;
-камера/QR с реальной наклейкой, разрешение/отказ камеры, JPEG upload, Web Push
-permission и OS reception (учесть требования платформы/установленной PWA).
-Camera/Web Push требуют secure context. Отключить сеть после queue load, проверить
-read-only OFFLINE/stale/time, reload той же вкладки, запрет mutations, reconnect
-и свежие данные, no replay, logout cache clearing. Physical device здесь недоступен.
-
-Acceptance журнал:
-
-| Gate | Результат здесь | Требуемое доказательство на VPS |
+Keep the original SSH session open; confirm a second deploy-user session after
+firewall setup. Check provider firewall too. No real deployment is authorized
+or performed by this preparation task.
+
+## Architecture and layout
+
+- Debian PostgreSQL 15 service; loopback TCP 5432 and local Unix socket only.
+- Separate `ozon-app` system user without login/sudo, Python 3.12 virtualenv,
+  one Uvicorn worker on 127.0.0.1:8000; logs through journald.
+- Pinned Caddy 2.11.6 installed system-wide and run as `caddy.service`/user `caddy`.
+  Only TCP 80/443 are public; static React PWA + `/api/*` proxy + SSE.
+- Node/npm run only during frontend build. No Node/Vite runtime server.
+  Redis/Celery are absent. SQLAlchemy pool stays 2 + 1, timeout 3 s.
+
+| Path | Ownership/access | Purpose |
 | --- | --- | --- |
-| Production Compose/build/migrations/start | NOT RUN | Exit 0, SHA/digests, ps/readiness |
-| HTTPS/redirect/public routes/headers | NOT RUN | Public smoke PASS с verified cert |
-| Только нужные порты и 1 GB capacity | NOT RUN | Внешний port scan, host/container peaks, no OOM |
-| Persistent restart | NOT RUN | DB row/photo/backup после restart |
-| Target Linux isolated restore | NOT RUN — launch blocker | Полный PASS + cleanup/volume guards |
-| PostgreSQL plans/CPU/RSS/concurrency | NOT RUN | Synthetic reports + target capacity measurement |
-| Container HTTPS desktop/mobile E2E | NOT RUN | 12/12, без retries |
-| Production auth/proxy security | NOT RUN | Checklist раздела 7 |
-| Real Ozon/Web Push/Telegram | NOT RUN | Provider/device smoke, без secrets в отчёте |
-| Physical phone/PWA/camera | NOT RUN | Device/OS и результаты раздела 9 |
+| /opt/ozon-production/repo | deploy user, no secrets | Git release source |
+| /opt/ozon-production/python | root, service-readable | Managed Python 3.12 |
+| /opt/ozon-production/releases | root, service-readable | Current + previous code/venv/dist |
+| /opt/ozon-production/current | root-managed symlink | Active immutable release |
+| /etc/ozon-production/production.env | root:root 600, parent 700 | Backend secrets |
+| /etc/ozon-production/caddy.env | root:root 600 | Public DOMAIN only |
+| /var/lib/ozon-production/uploads | ozon-app 700 | Private authenticated photos |
+| /var/lib/ozon-production/backups | root 700 | DB/uploads bundles |
+| /var/lib/ozon-production/private | root 700 | Lock/rollback record/private env snapshot |
+| /var/lib/caddy | caddy 700 | Persistent certificates/renewal state |
 
-Локально: backend suite 273 passed + новые safety tests, Ruff, frontend
-lint/typecheck/build и E2E 12/12; Bash synthetic backup/retention/restore rollback
-checks прошли в Git Bash. YAML parsed, **это не Docker Compose validation**.
-Synthetic production-flow check дополнительно подтверждает блокировку startup
-после migration failure и сохранность прежнего атомарного rollback snapshot при
-backup failure (`bash scripts/test-production-flow.sh`).
-Полные актуальные результаты записаны в STATE.md. Ни commit, ни push не выполнялись;
-task 035 не начата. После прохождения реальных gates обновить этот журнал,
-STATE.md и только тогда acceptance checkboxes/status task 034.
+Systemd loads the private env as root before dropping service privileges. The
+API can write uploads, not code/backups/secrets. Caddy never receives DB/Ozon keys.
+Env is plain `KEY=value`, no shell quotes/expansion; scripts parse it as data.
+Do not `source` it, enable `set -x`, or attach its contents to chat/logs.
+
+Debian 12's system Python 3.11 stays intact. Bootstrap installs checksum-verified
+[pinned uv 0.12.20](https://github.com/astral-sh/uv/releases/tag/0.12.20), then a
+[managed Python 3.12](https://docs.astral.sh/uv/guides/install-python/). This uses
+Astral's standalone distribution; uv has no daemon and is used only for setup.
+Bootstrap verifies upstream Caddy SHA512 too. No Python/Go source build on VPS.
+A successful release records `installed-requirements.txt`; rollback keeps that
+release's actual virtualenv, without resolving dependencies again. Dependencies
+in requirements are ranges, so a new release build is not byte-reproducible;
+inspect recorded versions and audit before launch. OS/Caddy/Python binary upgrades
+are separate maintenance and are not reverted by application rollback.
+
+## Agent SSH deployment
+
+Give the agent a separate public SSH key authorization, never a root password or
+private key in chat. Generate a temporary ed25519 key **locally outside the repo**,
+mode 600 (Windows: restrict ACL to the current user). Agent uses the local key path
+with SSH `IdentityFile`/`IdentitiesOnly yes`; do not paste key material. Verify the
+VPS host fingerprint through the provider console before accepting it. Do not
+use `StrictHostKeyChecking=no` or forward a personal SSH agent to the VPS.
+
+Bootstrap accepts one public key. A passwordless deploy user has sudo group but
+needs locally configured sudo authentication. For an authorized non-interactive
+coding-agent session explicitly pass `--agent-sudo`: this creates
+`/etc/sudoers.d/ozon-deploy` with NOPASSWD administrative access. This is root-level
+maintenance authority, separate from the unprivileged runtime account. Use a
+short-lived key/user, restrict source IP in provider firewall/authorized_keys
+where practical. Agent runs `sudo -n`, so missing authorization fails promptly.
+
+After acceptance, remove the exact temporary public-key line from deploy's
+`authorized_keys`, delete its sudoers file and local temporary private key, and
+close active agent SSH sessions (key deletion does not terminate existing ones).
+Keep a tested operator SSH key/provider console. A permanent deploy identity can
+instead retain a dedicated key and explicit administrative authorization.
+
+Private repository: create a separate read-only GitHub deploy key on the VPS,
+add only its public half in repository Settings → Deploy keys, without write
+access. Configure `Host github-ozon`, HostName github.com, User git,
+IdentityFile to that VPS-private key, IdentitiesOnly yes. Verify
+[GitHub host fingerprints](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints).
+No GitHub password/token is put in scripts/env/repository. Clone as deploy user:
+
+```sh
+git clone git@github-ozon:OWNER/REPO.git /opt/ozon-production/repo
+```
+
+Offline delivery alternative: scp/rsync a clean Git bundle + release artifacts
+excluding `.env*`, `.venv`, node_modules, uploads, backups and operational data;
+clone the bundle into the same repo path and provide an accessible `origin` for
+fetch. A plain archive without Git history cannot drive these update scripts.
+For a private origin, agent SSH access and GitHub read-only access are two
+separate keys; revoke temporary SSH access independently.
+
+## Automated bootstrap and first deploy
+
+Transfer `bootstrap-vps.sh` plus the **public** key with scp. Bootstrap is
+self-contained, verifies Debian 12/x86_64, updates apt, installs PostgreSQL,
+Python/runtime utilities, Git, curl, UFW, rsync and
+util-linux; installs Caddy/uv and build-only Node 22.23.3/npm with verified checksums.
+Debian Node 18 does not satisfy the lockfile; the official standalone
+[Node binary](https://nodejs.org/download/release/latest-v22.x/) avoids the apt npm
+dependency tree. Python dependencies use binary wheels; a C/Go compiler is not installed. It creates separate users,
+FHS directories, 1 GiB swap only if none exists, preserves configured SSH ports
+and existing UFW rules, opens 80/443, caps logs, and never installs Docker.
+It retains existing swap/files; filesystem or ambiguous swap needs review.
+Repeated bootstrap is maintenance: apt upgrade/PostgreSQL restart are intentional;
+run in a maintenance window and inspect existing firewall rules.
+
+```sh
+sudo -n bash /tmp/bootstrap-vps.sh deploy /tmp/deploy.pub --agent-sudo
+# After read-only Git clone as deploy:
+cd /opt/ozon-production/repo
+sudo -n bash scripts/deploy-native.sh RELEASE_SHA PUBLIC_IPV4
+```
+
+The initial command generates secrets directly into the root-only private env,
+provisions a nonsuperuser `ozon` role/owned database, builds a fresh virtualenv and
+frontend, validates production settings, runs Alembic before startup, validates
+Caddy/systemd, starts services, probes readiness, runs public smoke, and enables
+the daily backup timer. No secrets are needed for frontend build. DB role has
+DDL on its own schema for Alembic, no CREATEDB/CREATEROLE/replication/superuser;
+this deliberately uses one application/migration role for this small instance.
+Do not open 5432/8000/2019 in either firewall. Inspect listeners externally.
+
+Create the first administrator locally, with hidden password entry:
+
+```sh
+cd /opt/ozon-production/current/backend
+sudo python3 ../scripts/native-env.py /etc/ozon-production/production.env run -- \
+  /opt/ozon-production/current/.venv/bin/python -m app.cli create-admin
+```
+
+This one-time user secret prompt is outside deploy/update; no account password
+should be sent to the agent. Set Telegram values only by editing the private env
+on VPS, configure all required fields together, and restart API. Back up the
+Ozon master key separately in encrypted operator storage before credential entry.
+
+## Trusted HTTPS directly on IPv4 (task 039 preserved)
+
+Explicit Let's Encrypt ACME `shortlived` issuer and `default_sni` preserve trusted
+IP HTTPS without purchasing a domain. No internal CA, separate ACME timer, or
+`curl -k`. [Let's Encrypt IP certificates](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability)
+are short lived; persistent `/var/lib/caddy` and Caddy's automatic renewal are
+mandatory. [Systemd operation](https://caddyserver.com/docs/running) supports
+Caddy's graceful reload. HTTP redirects to HTTPS; SPA fallback serves index.html;
+API preserves `/api`, flushes SSE immediately, sets security headers and caps
+request bodies at 21 MB. Application JSON/photo limits remain stricter; uploads
+are never exposed as static files.
+
+Verify normal browser/curl trust, IP SAN/issuer/notAfter, redirect, then smoke
+again after an actual automatic renewal. `journalctl -u caddy` must show no
+renewal failures. Issuance/renewal has **not** been tested against a public VPS.
+
+Admin enters Client ID/API key in existing Admin → Ozon; encrypted DB storage,
+read/minimal roles and FBS list/get import, confirmed tariff snapshots remain
+unchanged. No Ozon API changes or live account tests in task 040. Webhook bare-IP
+acceptance still requires Seller Check; it is neither promised nor ruled out.
+Reconciliation remains a fallback every 900 s. See [OZON_API.md](OZON_API.md).
+If Seller Check rejects IP, a free DuckDNS name pointed directly to the VPS is
+an option: change DOMAIN/APP_PUBLIC_URL together and caddy.env, restart/reload,
+smoke and repeat Seller Check. Reinstall PWA/login for the new origin. No CDN or
+changes to source trust: native backend trusts only 127.0.0.1/32; Caddy overwrites
+X-Ozon-Source-IP. Recheck official provider source ranges during acceptance.
+
+## Update, failure and rollback
+
+```sh
+sudo -n bash /opt/ozon-production/repo/scripts/update-native.sh RELEASE_SHA
+```
+
+One command: lock → stop API → consistent backup → save old code/env recovery
+record → git fetch/checkout immutable release → fresh dependencies → frontend
+build → config check → Alembic upgrade → current symlink switch → restart API →
+readiness → Caddy reload → public smoke → cleanup. Brief maintenance outage is
+intentional: on 1 GB, build runs with API stopped. Node heap is capped at 384 MiB;
+1 GiB swap is emergency reserve. Check target build peak before acceptance; if
+build exceeds capacity, prebuild frontend off-host in a separately reviewed flow.
+The script requires >=1 GiB free before staging; capacity is measured, not assumed.
+
+Failure leaves API stopped and reports recovery instructions. Failed backup does
+not change code or overwrite the prior rollback record. After successful backup,
+`update-pending` blocks a second update until recovery; a failing migration cannot
+start the API. Inspect `journalctl -u ozon-production`, disk and backup first.
+A partially migrated DB must never be restarted with old code without recovery.
+
+```sh
+sudo bash scripts/rollback-native.sh
+# Authorized agent recovery (destructive, explicit opt-in):
+sudo -n bash scripts/rollback-native.sh --yes
+```
+
+Manual rollback requires ROLLBACK; automation can explicitly choose --yes.
+It stops writers, restores the pre-update DB/uploads snapshot, restores saved
+private env/config/old virtualenv, switches code, restarts and runs smoke.
+This loses post-update writes; review the snapshot before confirmation. It does
+not guess Alembic downgrade compatibility. DB credentials/master key must not
+be rotated during an application update; rotate them as separate maintenance.
+DB/uploads restoration is not jointly atomic and `pg_restore --clean` does not
+remove objects absent from the dump. On schema incompatibility restore into a
+separate database and verify before changing the private connection URL. Failures
+keep API stopped and evidence for operator recovery. First-deploy failure has no
+previous release: inspect/repair in place, preserving DB/env/uploads/Caddy data.
+
+## Backup, retention and disk budget
+
+```sh
+sudo -n bash scripts/backup.sh
+sudo systemctl stop ozon-production.service
+sudo bash scripts/restore.sh backup-TIMESTAMP-RANDOM.tar.gz
+sudo systemctl start ozon-production.service
+sudo -n bash scripts/smoke.sh
+```
+
+See [BACKUP_RESTORE.md](../BACKUP_RESTORE.md). Daily native timer at 02:00 UTC
+(05:00 Moscow), root-only bundles, newest 3 plus a protected rollback snapshot.
+It creates a short maintenance outage. Off-host encrypted copies are mandatory
+operator responsibility; local retention alone cannot protect disk loss.
+The timer shares the update/restore lock; lock failure is logged as failure,
+not a second concurrent backup. Inspect/alert on failed timers.
+
+On approximately 7 GB SSD, 1 GiB is swap; OS/packages/DB/WAL/uploads/two virtualenvs
+and restore staging consume the rest. This is a tight capacity target, not a
+promise. No measured native RAM/disk totals exist yet. Journald max 64 MB persistent,
+16 MB runtime, seven-day retention, 512 MB keep-free; PostgreSQL logrotate daily,
+three compressed rotations, maxsize 16 MB checked by logrotate (not a hard cap).
+DB WAL max_wal_size=256 MB is a target and may be exceeded. No replication slots.
+Backup count does not bound archive bytes: monitor their size, reduce retention
+or move verified copies off-host if necessary. Protect the rollback snapshot.
+
+Successful deployment retains only current/previous releases, removes candidate
+node_modules/npm cache/__pycache__; pip uses --no-cache-dir and uv no cache.
+Failure also removes candidate node_modules/npm cache; failed release evidence
+may remain until recovery. Never blindly delete current/previous code, env,
+DB/uploads or `/var/lib/caddy`. Git retains release history; periodically inspect
+`.git` size and perform reviewed `git gc` during maintenance. apt cache is cleaned
+at bootstrap. Build Node/npm can be removed after a verified build only if reinstalled for
+subsequent builds; scripts assume their presence.
+
+```sh
+df -h
+sudo du -sh /opt/ozon-production/* /var/lib/ozon-production/* /var/lib/postgresql /var/lib/caddy /var/log
+journalctl --disk-usage
+free -h
+vmstat 1
+sudo systemctl status ozon-production.service caddy.service postgresql@15-main
+sudo journalctl -u ozon-production.service -u caddy.service -n 100 --no-pager
+```
+
+## Docker versus native
+
+| Aspect | Previous Docker deployment | Current native deployment |
+| --- | --- | --- |
+| RAM | Application + Docker/containerd/daemon overhead | Same app components; daemon overhead removed; measure RSS |
+| Disk | Images/layers/build caches/volumes | Packages + two venv/dist releases; cache/release cleanup explicit |
+| Idle processes | Containers plus daemon/shims | PostgreSQL/API/Caddy, no Node daemon |
+| Startup | Engine, networks, volume mapping and Compose ordering | Debian packages, systemd and explicit migration/readiness |
+| Update | Images and env orchestration | Single backup/build/migrate/restart/smoke command |
+| Rollback | Prior image plus data compatibility recovery | Retained prior venv/code and guarded DB/uploads snapshot restore |
+| Tradeoff | Better packaging/isolation | Fewer moving parts; OS/runtime upkeep and build peaks need care |
+
+No fabricated MB savings, idle-process counts or capacity guarantee. Container
+memory/swap/CPU/PID caps are removed from production; no equivalent unmeasured
+hard systemd caps are imposed. Conservative PostgreSQL settings, one worker,
+small pool and measured host headroom are the initial operating policy.
+
+## Live acceptance — task 034 pending
+
+Run the native drill before importing real data; after first deploy use:
+
+```sh
+sudo -n bash scripts/backup-restore-native-drill.sh
+sudo -n bash scripts/smoke.sh
+```
+
+Drill uses a fresh PostgreSQL 15 initdb cluster with private Unix socket, synthetic
+credentials/env, current virtualenv/migrations and isolated uploads/backups; no
+TCP listener, production env/DB/volumes. On failure evidence is retained. Check
+migrations, archive, DB/files mutation then restoration, newest retention and
+isolated cleanup. This Linux drill remains a mandatory launch blocker.
+
+Further gates: external port scan; trusted IP certificate/automatic renewal;
+PostgreSQL audit trigger/concurrency; service restart/reboot persistence; measured
+RSS/CPU/disk/swap/build and real concurrency/p95; authenticated two-browser SSE;
+Ozon Seller Check/real minimal-role import/webhook/reconciliation/tariff; Telegram;
+physical Android/PWA. Optional camera/Push gates only when enabled.
+`SMOKE_COOKIE_JAR=/private/mode600-cookiejar sudo ...` should instead be passed via
+`sudo env SMOKE_COOKIE_JAR=/private/mode600-cookiejar bash scripts/smoke.sh` so sudo
+preserves only the explicit path; authenticated SSE probe is otherwise reported
+not run. Provider/device tests need authorized accounts, never production load
+or automated business tests against a live Ozon account. Docker live validation
+is no longer a production acceptance criterion.
+
+Operator work is about four one-time groups: verified SSH/public key access,
+read-only repo/release delivery, private admin/provider configuration, and live
+acceptance. Agent can run bootstrap/deploy/drill/smoke; normal update is one
+command. User still owns account secrets and acceptance decisions.

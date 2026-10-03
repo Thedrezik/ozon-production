@@ -97,7 +97,7 @@ export async function containerEnvironment() {
     config.services['fault-proxy'] = { image: 'node:22-alpine', command: ['node', '/fault-proxy.mjs'], mem_limit: '96m',
       volumes: [{ type: 'bind', source: join(root, 'frontend/scripts/e2e/fault-proxy.mjs'), target: '/fault-proxy.mjs', read_only: true }, { type: 'bind', source: directory, target: '/e2e' }],
       networks: { default: null } }
-    let caddyfile = await readFile(join(root, 'deployment/Caddyfile'), 'utf8')
+    let caddyfile = await readFile(join(root, 'deployment/Caddyfile.compose'), 'utf8')
     // Test-only local issuer/source relaxation; production file remains unchanged.
     caddyfile = caddyfile.replace('{$DOMAIN} {', 'localhost {\n    tls internal')
       .replace(/ {4}@ozonDenied \{[\s\S]*?\n {4}\}/, '')

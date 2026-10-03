@@ -2,7 +2,7 @@
 # through a recording docker function, including both normal and failure cleanup.
 $ErrorActionPreference = 'Stop'
 $runner = Join-Path $PSScriptRoot 'backup-restore-drill.ps1'
-$restoreSource = Get-Content -Raw (Join-Path $PSScriptRoot 'restore.sh')
+$restoreSource = Get-Content -Raw (Join-Path $PSScriptRoot 'restore-compose.sh')
 if ($restoreSource -notmatch 'pg_restore --list\s*<"\$stage/database\.dump"' -or
     $restoreSource -match 'pg_restore[^\r\n]*\s-\s') {
     throw 'pg_restore validation must read stdin without an input filename (especially not -)'

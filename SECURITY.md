@@ -76,7 +76,7 @@ issues remain within the reviewed scope. Launch verification below is still requ
 1. Explicitly set APP_ENV=production, OZON_MOCK_MODE=false, DOMAIN to the real
    domain and APP_PUBLIC_URL to the matching HTTPS origin. Do not use .env.example
    unchanged. Production startup requires DOMAIN to equal APP_PUBLIC_URL's host
-   and port; Compose also requires APP_ENV explicitly. Supply random APP_SECRET (32+ characters), PostgreSQL password
+   and port; native env explicitly sets APP_ENV. Supply random APP_SECRET (32+ characters), PostgreSQL password
    (16+ characters), and a valid Fernet OZON_CREDENTIALS_MASTER_KEY. Startup rejects
    placeholders, mock mode, invalid environment names, insecure/public example
    origins and incomplete optional Telegram/VAPID configuration. APP_SECRET is
@@ -85,8 +85,10 @@ issues remain within the reviewed scope. Launch verification below is still requ
    the master key separately. Never enable HTTP/SQL debug logs or request-body
    logging; do not enter secrets into business text. Restrict operator/DB privileges.
    Old dormant p=1 password hashes upgrade on next login; reset unused accounts.
-3. Publish only Caddy ports. Keep PostgreSQL/backend on the private Compose network;
-   configure exact Caddy peer IP (/32 or /128) for Ozon callbacks. Do not insert a
+3. Publish only Caddy ports. Keep PostgreSQL/backend bound to 127.0.0.1;
+   trust only 127.0.0.1/32 for Ozon callbacks. Keep native production env root-only
+   under /etc/ozon-production, runtime user ozon-app without sudo/login, and code
+   read-only. Caddy receives DOMAIN only, never application secrets. Do not insert a
    CDN/proxy without revisiting source validation. IP ingress protection is not
    cryptographic proof of Ozon identity. Recheck official source ranges when deploying.
 4. Run one API worker/instance. In-process limits reset on restart. Behind Caddy,
@@ -102,15 +104,15 @@ issues remain within the reviewed scope. Launch verification below is still requ
    Validate Caddy configuration, PostgreSQL audit trigger and concurrent
    user-management row-lock behavior there (SQLite test DB does not enforce FOR UPDATE).
 6. Repeat `npm audit`, Python `pip-audit` and `pip check` against the final deployment
-   dependency set/image, keeping patched versions. A clean audit is a point-in-time
+   dependency set/virtualenv, keeping patched versions. A clean audit is a point-in-time
    advisory check, not a guarantee. Do not enable runtime debug mode.
 7. Verify real Ozon webhook/reconciliation, Telegram and VAPID delivery, phone/PWA
    camera, SSE reconnect and isolated Linux backup/restore (mandatory task 034 gate).
    Rotate exposed secrets, invalidate affected sessions and use private operational
    channels to report a vulnerability; never attach real credentials to a report.
 
-Docker and Caddy executables are unavailable in this review environment. Container
-build, migrations, live PostgreSQL/Caddy headers and production debug-leak checks
+Native Debian services are unavailable in this Windows review environment. Live
+migrations, PostgreSQL/Caddy headers and production debug-leak checks
 must be performed at deployment. Local health/readiness, headers, production config,
 error redaction, auth/RBAC and browser controls are covered by automated tests.
 
@@ -132,3 +134,8 @@ References: [OWASP password storage](https://cheatsheetseries.owasp.org/cheatshe
   Final npm audit: zero vulnerabilities across 530 dependencies. Python audit
   covered the installed 73-package runtime/dev/tooling environment. No major
   application upgrades; pytest's security fix required the dev-only 9.x migration.
+
+Task 040: native restore validates tar members and requires stopped writers and
+manual confirmation or explicit --yes. Passwords stay out of argv; agent SSH uses
+a revocable separate key and explicitly opted-in administrative sudo. DB/master-key
+rotation is separate from application updates.

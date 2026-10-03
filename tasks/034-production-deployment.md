@@ -56,23 +56,22 @@ reasoning: Medium
 
 ## Acceptance Criteria
 
-- [ ] Production compose запускается.
+- [ ] Native PostgreSQL/API/Caddy systemd services запускаются (task 040).
 - [ ] HTTPS работает.
-- [ ] На отдельном VPS 1 CPU / 1 GB RAM подтверждены resource limits, запас ОС/Docker, отсутствие OOM и приемлемая отзывчивость.
+- [ ] На отдельном VPS 1 CPU / 1 GB RAM подтверждены настройки памяти, запас ОС, отсутствие OOM и приемлемая отзывчивость.
 - [ ] Frontend/backend доступны по ожидаемому URL.
 - [ ] Webhook route доступен извне.
-- [ ] Persistent data переживает container restart.
-- [ ] На целевом Linux VPS успешно выполнен и документирован полный isolated backup/restore drill из task 030 со всеми проверками выше; production volumes не затронуты. Обязательное условие перед production launch.
+- [ ] Persistent data переживает systemd restart/reboot.
+- [ ] На целевом Linux VPS успешно выполнен и документирован полный isolated backup/restore drill из task 030 со всеми проверками выше; production DB/uploads/env не затронуты. Обязательное условие перед production launch.
 - [x] DEPLOYMENT.md создан.
 - [x] STATE.md обновлён.
 
-Implementation prepared 2026-10-02: standalone production Compose/env, explicit
-update/migration/rollback operations, automated guarded Linux restore drill,
-optional PostgreSQL/Caddy HTTPS mode for the existing E2E runner, deployment smoke
-and runbook. Dedicated target: 1 CPU / 1 GB RAM, no functionality removal. Status
-remains pending: Docker daemon/target VPS/public HTTPS are
-unavailable to the agent. All runtime acceptance criteria above require actual
-execution and evidence; see docs/DEPLOYMENT.md. No commit/push; task 035 not started.
+Task 040 (2026-10-03) supersedes prepared Docker production with native Debian
+services, private FHS env/paths, automated release scripts and an isolated native
+PostgreSQL backup/restore drill. Docker live validation is no longer a production
+acceptance criterion. Status remains pending: target VPS, public HTTPS
+issuance/renewal and native Linux restore/capacity evidence are absent.
+Development/test Compose fixtures are optional. See docs/DEPLOYMENT.md.
 
 ## Completion
 

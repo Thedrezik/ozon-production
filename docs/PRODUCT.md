@@ -11,6 +11,7 @@
   подтверждённые Decimal Tariff/Money at Risk. Реальный tariff adapter подключён.
 - Telegram core: проблема, отмена после запуска, критическая integration ошибка.
 - Optional features выключены: [список и включение](OPTIONAL_FEATURES.md).
+- Production task 040: native Debian/systemd/PostgreSQL/Caddy, без Docker; Docker только development/tests.
 - Security/backup/PWA сохранены. Task 034 pending; production deployment отсутствует.
 
 Ниже сохранено исходное расширенное ТЗ **только как историческое приложение**.

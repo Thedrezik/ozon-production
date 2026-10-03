@@ -1,0 +1,33 @@
+[Unit]
+Description=Ozon production API (one worker)
+After=network-online.target postgresql@15-main.service
+Wants=network-online.target
+Requires=postgresql@15-main.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ozon-app
+Group=ozon-app
+WorkingDirectory=/opt/ozon-production/current/backend
+EnvironmentFile=/etc/ozon-production/production.env
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ExecStart=/opt/ozon-production/current/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --no-proxy-headers --no-access-log --timeout-graceful-shutdown 30
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=60
+TimeoutStopSec=45
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ozon-production/uploads
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

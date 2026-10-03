@@ -38,9 +38,10 @@ and excluded from core PWA precache: 12 entries, 300.12 KiB versus the initial
 Core background loops: inbox idle 5 s; reconciliation at startup and 900 s after
 completion; configured Telegram queue 15 s. Push delivery/key expiry are off.
 No procurement overdue/workload/ManagerTask queries in core; no new scheduler.
-Memory configuration unchanged: PostgreSQL/backend/Caddy caps 256/384/96 MiB,
-one backend worker, pool 2+1. Domain provider transactions and real PostgreSQL
-query plans/host reserve/concurrency/CPU/RSS still require task 034 acceptance.
+Native task 040 replaces container caps with conservative host PostgreSQL settings,
+one API worker/pool 2+1, Caddy GOMEMLIMIT=64MiB, stopped-API builds and 1 GiB emergency
+swap. Native RSS/disk/build capacity is unmeasured; see DEPLOYMENT.md. Historical
+Windows measurements below remain comparisons, not Debian acceptance.
 
 The task 032 measurements below describe the preserved extended implementation.
 Its optional-query/notification statements do not describe core defaults.
@@ -102,28 +103,23 @@ reads while retaining unique-key race protection and closed-task decisions.
 
 ## Memory and production defaults
 
-Compose runtime hard caps: PostgreSQL **256 MiB**, backend **384 MiB**, Caddy
-**96 MiB**, total **736 MiB**. Dedicated production minimum: **1 CPU / 1 GB RAM**,
-leaving approximately 218 MiB (decimal 1 GB) or 288 MiB (1 GiB) before kernel/host
-overhead. Production explicitly limits RAM+swap to 320/512/128 MiB respectively:
-at most 64/128/32 MiB swap, total 224 MiB. Recommend a 1 GiB host swap emergency
-buffer with swappiness=10, not as added working RAM. Keep all functions; future
-lightweight review is outside task 034. See DEPLOYMENT.md for safe host commands.
-These caps require verification on the actual host;
-do not confuse caps with measured container consumption. CPU quotas are 0.75,
-0.75, 0.25 respectively, shared on the one CPU, not CPU reservations. Each service
-has a 100-process/thread cap. No runtime Node/Vite server is deployed.
-
-PostgreSQL: max_connections=20, shared_buffers=64MB, work_mem=2MB,
-maintenance_work_mem=32MB, effective_cache_size=256MB (planner estimate, not an
-allocation), query parallelism disabled, shared memory=64 MiB. Work memory is per
-sort/hash operation, not per server. Existing single Uvicorn worker is required:
-SSE and scheduler locks are in-process. SQLAlchemy retains pool_size=2,
-max_overflow=1, pre_ping and 3-second connect timeout; add 3-second pool wait timeout.
-Maximum three connections per API engine; explicit migration/backup connections
-use spare PostgreSQL capacity. Liveness performs no SQL; readiness executes SELECT
-1 and returns 503 on database failure. Compose healthcheck uses liveness and the
-configured Host so production Host validation still applies.
+Native production target: Debian 12 / 1 CPU / 1 GB RAM / ~7 GB SSD. No Docker
+RAM+swap/CPU/PID caps, daemon or shared-memory volume config. No hard systemd memory
+caps are guessed before measuring the target; Linux OOM behavior must be observed.
+PostgreSQL 15: max_connections=20, shared_buffers=64MB, work_mem=2MB,
+maintenance_work_mem=32MB, autovacuum_work_mem=16MB, effective_cache_size=256MB
+(planner estimate, not allocation), parallel query disabled, WAL target 256MB.
+Work memory can multiply across operations/connections; WAL can exceed its target.
+See [PostgreSQL resource settings](https://www.postgresql.org/docs/15/runtime-config-resource.html).
+The backend uses one worker, pool_size=2/max_overflow=1, pre_ping, connect/pool
+wait timeout 3 s. Health/readiness use the real Host; readiness SELECT 1 is checked
+before public smoke. Caddy Go heap target 64MiB is soft, not total process RSS.
+Use 1 GiB swap/swappiness 10 for short peaks; sustained paging is a capacity failure.
+Build with API stopped, Node heap 384MiB, binary Python wheels and no package caches.
+Only current/previous venv/dist retained, journals bounded, backups newest 3 plus
+protected rollback snapshot. Measure archive sizes, WAL, temporary restore/build
+space and OS packages: ~7 GB is tight and unproven. Do not run browsers/load tests
+on the live 1 GB VPS concurrently with production; use a separate client/fixture.
 
 Queue/risk limit remains 1–100, maximum offset 10,000 to bound heap/page retention.
 Timeline/history limit 1–200; analytics page_size 1–100 and date range <=366 days;
@@ -203,14 +199,15 @@ preference opt-outs remain effective alongside mandatory overdue alerts.
 Existing Ozon tests cover cursor pages, rollback/replays, sequential scheduling and
 responsive API during slow reconciliation. No live account testing.
 
-Docker executable is unavailable here. Required target-host checks:
+Native Debian runtime is unavailable here. Required target-host checks:
 
 1. Follow [DEPLOYMENT.md](DEPLOYMENT.md) and `scripts/production.sh`: explicit
    backup/update/migration before API startup, status, HTTPS `/api/health` and
    `/api/health/ready`. Opt-in `E2E_CONTAINER=true E2E_PROBE=true npm run test:e2e`
-   produces isolated PostgreSQL plans/concurrency/CPU/memory/RSS reports on Linux;
+   is an optional development/test fixture for PostgreSQL plans/concurrency reports;
    this runtime-unverified runner uses small fixtures, not realistic capacity data.
-2. `docker stats --no-stream`, host available memory/swap and OOM/restart counts
+2. `systemctl show ozon-production caddy postgresql@15-main -p MemoryCurrent -p NRestarts`,
+   `ps -eo pid,user,rss,comm`, host available memory/swap and OOM/restart counts
    during idle, synthetic requests, parallel browsers/SSE and uploads. Repeat with
    real phone JPEG/PNG/WebP within limits. Verify p95 latency at actual concurrency.
 3. Inspect actual pool/pg_stat_activity counts and wait behavior while reconciliation

@@ -2,9 +2,15 @@
 
 Mobile-first production management system with authentication, RBAC, mock orders, and a production queue. Real Ozon integration is not connected.
 
-## Configure and run
+## Production
 
-Requires Docker Compose. Copy `.env.example` to `.env`. Set a strong `POSTGRES_PASSWORD` and use the same password in `DATABASE_URL`. Keep `OZON_MOCK_MODE=true`. For local HTTP keep `DOMAIN=:80`; for production use a real domain with DNS pointing to the VPS. Caddy will obtain HTTPS automatically for a real domain. Do not commit `.env`.
+Production uses native Debian 12 PostgreSQL/systemd/Python virtualenv/Caddy.
+Start with [DEPLOYMENT.md](docs/DEPLOYMENT.md); task 034 remains pending until
+actual VPS acceptance. Docker/Compose are only development/test tools.
+
+## Development: configure and run
+
+Requires Docker Compose. Copy `.env.example` to `.env`. Set a strong `POSTGRES_PASSWORD` and use the same password in `DATABASE_URL`. Keep `OZON_MOCK_MODE=true`. For local HTTP keep `DOMAIN=:80`; production trusted IPv4 HTTPS uses the separate native runbook. Do not commit `.env`.
 
 ```sh
 cp .env.example .env
@@ -16,7 +22,7 @@ docker compose exec backend python -m app.cli seed-mock-orders
 docker compose ps
 ```
 
-Open `http://localhost` locally (or `https://your-domain` in production) and sign in with the admin account. The CLI prompts for a password without displaying it. `GET /api/health` checks the API process; `GET /api/health/ready` checks database connectivity. API docs are available at `/docs` on the backend container during development; they are not exposed through Caddy.
+Open `http://localhost` locally and sign in with the admin account. The CLI prompts for a password without displaying it. `GET /api/health` checks the API process; `GET /api/health/ready` checks database connectivity. API docs are available at `/docs` on the backend container during development; they are not exposed through Caddy.
 
 ```sh
 docker compose logs -f backend caddy postgres

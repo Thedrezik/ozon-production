@@ -598,3 +598,27 @@ existing refresh. Optional expiration tasks/loops remain disabled by default.
 Bootstrap targets fresh Debian 12 x86_64, preserves SSH/swap, and uses official
 Docker apt packages. Build off-host on the 1 GB target; backup before code/image
 switch, migration before startup, guarded restore. No deployment/commit/push in 039.
+
+## 040 — Native Debian production supersedes Compose
+
+Production is Debian 12 x86_64 with host PostgreSQL 15, managed Python 3.12 in a
+release virtualenv, one systemd API worker, and system-installed pinned Caddy
+2.11.6 serving static PWA + loopback API/SSE. Docker/Compose are development/test
+only; old container caps/networks/images/volumes are not production controls.
+One application-owned DB/schema supports migrations; role has no server-level
+administration. Private root-only env is outside Git. Caddy receives public host
+only, persistent certificate state; task 039 public shortlived IP TLS is retained.
+
+Debian's Python 3.11 is left untouched; checksum-verified pinned uv installs a
+standalone 3.12 runtime without a source build on 1 GB. Builds run with API stopped;
+Node/npm have no runtime service. Update serializes consistent backup, release
+fetch/build, migrations, restart/readiness/smoke. Keep actual previous virtualenv
+and private env/snapshot record. Failure stops API and blocks repeat update until
+recovery; guarded rollback restores DB/uploads, never guesses schema downgrade.
+Native isolated initdb/Unix-socket drill replaces Docker production acceptance.
+
+Target ~7 GB disk includes 1 GiB swap; bound journals/PG log retention, newest
+three backups plus protected rollback snapshot, two releases, remove build/cache
+artifacts. Archive bytes/WAL/build/RSS are measured launch gates, not promised
+capacity. Agent SSH uses revocable key + explicit administrative sudo; runtime
+user has neither login nor sudo. Task 034 remains pending; no live deployment.

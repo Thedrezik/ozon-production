@@ -2,7 +2,9 @@
 
 Current behavior is specified in [CORE_WORKFLOW.md](CORE_WORKFLOW.md).
 Single PostgreSQL + FastAPI/Uvicorn worker + static React PWA/Caddy; no broker.
-Existing pool 2+1 and memory caps 256/384/96 MiB remain.
+Production task 040: native Debian 12 PostgreSQL 15 + Python 3.12 virtualenv +
+systemd API/Caddy; Docker only development/tests. Pool 2+1 remains; old container
+caps/networks/volumes are superseded. Paths/operations: DEPLOYMENT.md.
 Task 039 production endpoint can be a public IPv4: pinned Caddy 2.11.6 with
 explicit Let's Encrypt shortlived ACME issuer, persistent automated renewal,
 default_sni for IP clients. Public issuance/device acceptance remains task 034.

@@ -4,6 +4,8 @@ Last updated: 2026-10-03
 
 ## Completed
 
+- Task 040: native Debian 12 production preparation; host PostgreSQL 15, managed Python 3.12/release venv, one systemd worker, pinned system Caddy 2.11.6/static PWA/IP TLS. Native bootstrap/deploy/update/rollback/backup/restore/smoke + isolated Unix-socket PostgreSQL drill, private FHS env, log/backup/release retention and revocable agent SSH runbook. Docker production Compose removed; Docker remains development/tests only.
+
 - Task 039: IP-only production preparation and Ozon review; Debian 12 bootstrap/runbook/env ready. Ozon literal-IP webhook acceptance remains unconfirmed until Seller Check; free DNS fallback documented, reconciliation retained. Caddy config validated locally; live TLS/renewal and Linux acceptance remain 034.
 
 - Tasks 001–033: core production workflow, RBAC/auth/audit, priority/tariffs/Money at Risk, blockers/Manager Tasks/procurement, Ozon import/webhook/reconciliation/encrypted credentials, photos/QR, notifications/Web Push/Telegram, PWA/offline, analytics, backup, security and performance hardening. Details remain in tasks/ and the dedicated docs.
@@ -15,20 +17,20 @@ Last updated: 2026-10-03
 
 ## Current
 
-- Task 039 preparation complete: public IPv4 env, pinned Caddy 2.11.6 with public shortlived ACME/default_sni, bootstrap/deploy/update/smoke and verified upstream expiry + core Admin warning. Optional features remain off. No deployment/commit/push performed.
-- Task 034 remains **pending** for actual Linux VPS/live acceptance. Prepared Compose/private env/backup/update/rollback/guarded restore/container E2E/probes/public smoke remain in DEPLOYMENT.md.
+- Task 040 preparation complete; no VPS deployment, commit or push. Task 039 HTTPS/Ozon behavior retained. Native production runbook: DEPLOYMENT.md; optional features remain off.
+- Task 034 **pending**: actual Debian/systemd/PostgreSQL/Caddy, native restore, public IP certificate issuance/renewal, provider/device/capacity acceptance. Docker live validation is no longer a production gate.
 
 ## Next
 
-- Resume task 034 when VPS is available: preflight, guarded native backup→modify→restore→verify, isolated PostgreSQL/Caddy E2E, HTTPS/security/persistence/capacity, real Ozon/Telegram and physical-phone PWA. Push/camera/photos gates apply only if extensions are enabled. No production deployment/commit/push in 036.
+- Resume task 034 when VPS is available: preflight, guarded native backup→modify→restore→verify, native PostgreSQL/Caddy checks, HTTPS/security/persistence/capacity, real Ozon/Telegram and physical-phone PWA. Push/camera/photos gates apply only if extensions are enabled. No production deployment/commit/push in 040.
 
 ## Known Issues
 
 - Core has no autonomous Telegram deadline alerts; read-time Priority/Money at Risk + shared 60 s refresh provide current operational risk. Unknown/unsupported tariff sources are explicitly unpriced; RUB risk uses confirmed charges only. Historical import outside the discovery window requires backfill.
 - Credential SELECT releases its slot before HTTP; domain Ozon/Telegram transactions can still wait on providers. Delivery/commit crash gap may redeliver Telegram. Verify slow-provider/pool behavior on target.
-- Docker CLI/daemon and target VPS unavailable here. No Compose config/build/start, PostgreSQL query plans, container E2E, public TLS or actual Linux restore were executed. Caddy 2.11.6 Windows adapt/validate passed; no public issuance/renewal was attempted. YAML parsing/Git Bash synthetic checks are not Linux acceptance.
-- Full isolated Linux backup → modify DB/uploads → restore → verify is a mandatory launch blocker. Earlier Windows Docker evidence confirmed backup creation, not authoritative restore. Production volumes must never be mounted/deleted by drills.
-- Performance measurements are Windows/SQLite comparisons; exact queue priority/risk is O(active postings). PostgreSQL/backend/Caddy RAM caps 256/384/96 MiB total 736 MiB; RAM+swap ceilings 320/512/128 MiB. Recommend 1 GiB host swap as an emergency buffer, not working RAM; reserve host memory for Linux/Docker. Target CPU/RSS/concurrency/connection capacity requires measurement. Build images and run browsers off the live 1 GB VPS; target drill can reuse DRILL_BACKEND_IMAGE. See `PERFORMANCE.md`.
+- No target Debian VPS available here. Native bootstrap/services/pg_dump+pg_restore drill, public TLS and capacity are **NOT RUN**. Git Bash mocks and Windows Caddy adapt/validate are preparation evidence only. systemd-analyze is unavailable locally; static unit checks passed and real unit verification is built into deploy.
+- Full isolated native Linux backup → modify DB/uploads → restore → verify is a mandatory launch blocker. The drill uses a fresh initdb cluster/private Unix socket and synthetic paths, never production DB/env/uploads; no Docker required.
+- Native RAM/disk savings are unmeasured. PostgreSQL starts with 64MB shared_buffers, 20 connections, 2MB work_mem; API pool 2+1/one worker. No Docker-specific resource caps; 1 GiB swap is emergency reserve. ~7 GB disk/build peaks/two releases/backup bytes/WAL need measurement; log/count retention alone does not guarantee capacity. See PERFORMANCE.md.
 - Real Ozon/Telegram and physical-phone PWA remain HTTPS/device acceptance checks. Automated tests use synthetic providers only. Official tariff schema verified 2026-10-02; recheck webhook source networks on deployment (OZON_API.md).
 - Offline queue is read-only, one loaded page/one hour/same tab; no offline auth/mutations. Optional photos retain existing MIME/dimension limits; device decoder RSS requires verification when enabled.
 - Restore DB/uploads is not jointly atomic; pg_restore clean does not remove objects absent from dump. Schema rollback failures require stopped writers and controlled separate-DB recovery; see `DEPLOYMENT.md`/`BACKUP_RESTORE.md`.
@@ -36,14 +38,13 @@ Last updated: 2026-10-03
 
 ## Deployment
 
-- Production not deployed. Use `docker-compose.production.yml` via `scripts/production.sh`, private `.env.production`, backup before update and successful migration before API startup. Only TCP 80/443 are published; preserve SSH access. No Redis/Celery.
-- All live acceptance gates are NOT RUN. Task 035 was explicitly authorized before these gates; its completion does not authorize production launch or complete task 034.
+- Not deployed. Production is native only: `/opt/ozon-production/{repo,releases,current}`, private root-600 `/etc/ozon-production/production.env`, ordinary uploads/backups under `/var/lib/ozon-production`, persistent `/var/lib/caddy`. Backup → fetch/build → migrations → restart/readiness → smoke; guarded snapshot rollback with previous venv/env. Only TCP 80/443 plus actual SSH; DB/API loopback. No Redis/Celery/Node runtime server.
+- All live task 034 acceptance gates remain NOT RUN. Preparation completion does not authorize production launch.
 
 ## Last Tests
 
-- Task 039 full backend suite: **315 passed**, 8 existing Starlette/httpx/Alembic deprecation warnings; synthetic providers only. Includes 25 focused private-env/encrypted-credentials/expiry checks.
-- Ruff `check app tests alembic ../scripts` from backend: passed. Frontend lint/typecheck/build: passed; Vite build required sandbox escalation. Production-PWA desktop/mobile E2E: **12/12 passed**, retries 0, actual mock FastAPI/migrations/SSE/offline.
-- All shell scripts `bash -n`, synthetic production-flow and backup/restore guard checks passed under Git Bash; not native Linux execution. Bootstrap itself was not run on a VPS.
-- Official Caddy 2.11.6 Windows release downloaded and SHA512 matched publisher checksum. `adapt`/`validate` passed for a synthetic global IPv4; JSON confirms sole public ACME issuer + shortlived + default_sni, automatic redirects. No server started/certificate requested.
-- Docker CLI unavailable: Compose config/build/container E2E **NOT RUN**. Public IP TLS issuance/renewal, real Ozon URL/permissions/delivery, Telegram, physical Android/PWA, target performance and Linux restore **NOT RUN**; task 034 remains pending.
-- git diff --check passed. Task 038 historical visual review: 75/75 states; no core UI redesign in 039.
+- Task 040 full backend suite: **315 passed**, 8 existing Starlette/httpx/Alembic warnings; synthetic providers only. After adding native security/env/archive checks, focused deployment suite: **21 passed** (includes 9 new native tests).
+- Ruff `check app tests alembic ../scripts` from backend passed. Frontend lint/typecheck/build passed; Vite/esbuild needed sandbox escalation. Production PWA desktop/mobile E2E **12/12 passed**, retries 0, real mock FastAPI/migrations/SSE/offline.
+- All shell scripts `bash -n` passed. Native synthetic backup/restore and update/first-deploy failure ordering passed under Git Bash; development-only Compose backup and PowerShell command guard regression passed. No Linux native execution claimed.
+- Pinned checksum-verified Caddy 2.11.6 Windows adapt/validate of native IPv4 config passed; public ACME shortlived/default_sni, redirects, loopback proxy/static paths checked. No server started/certificate requested. Static unprivileged systemd unit checks passed; native `systemd-analyze verify` NOT RUN locally.
+- `git diff --check` passed. Public TLS/renewal, actual native PostgreSQL restore, Ozon Seller Check/minimal permissions/delivery, Telegram, physical phone and target capacity **NOT RUN**; task 034 pending. No commit/push.

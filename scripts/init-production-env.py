@@ -11,8 +11,6 @@ from pathlib import Path
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--domain", required=True)
-    parser.add_argument("--proxy-subnet", required=True)
-    parser.add_argument("--database-subnet", required=True)
     parser.add_argument("--release", required=True)
     parser.add_argument("--output", type=Path, default=Path(".env.production"))
     args = parser.parse_args()
@@ -31,24 +29,15 @@ def main():
     if args.domain in ("example.com", "localhost"):
         parser.error("use the actual application domain")
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,100}", args.release):
-        parser.error("release must be an immutable image tag, preferably the Git SHA")
-    proxy = ipaddress.IPv4Network(args.proxy_subnet)
-    database = ipaddress.IPv4Network(args.database_subnet)
-    if not proxy.is_private or not database.is_private or proxy.prefixlen > 28 or database.prefixlen > 28:
-        parser.error("choose private IPv4 networks with enough container addresses")
-    if proxy.overlaps(database):
-        parser.error("proxy and database subnets overlap")
+        parser.error("release must be a Git SHA or safe release name")
     password = secrets.token_hex(24)  # URL/env-safe, independently generated.
-    address = str(proxy.network_address + 2)
     replacements = {
         "DOMAIN": args.domain, "APP_PUBLIC_URL": f"https://{args.domain}",
         "APP_SECRET": secrets.token_hex(32), "POSTGRES_DB": "ozon", "POSTGRES_USER": "ozon",
         "POSTGRES_PASSWORD": password,
-        "DATABASE_URL": f"postgresql+psycopg://ozon:{password}@postgres:5432/ozon",
+        "DATABASE_URL": f"postgresql+psycopg://ozon:{password}@127.0.0.1:5432/ozon",
         "OZON_CREDENTIALS_MASTER_KEY": base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(),
-        "PROXY_SUBNET": str(proxy), "DATABASE_SUBNET": str(database), "CADDY_PROXY_IP": address,
-        "OZON_WEBHOOK_TRUSTED_PROXIES": f"{address}/32",
-        "BACKEND_IMAGE": f"ozon-backend:{args.release}", "CADDY_IMAGE": f"ozon-caddy:{args.release}",
+        "OZON_WEBHOOK_TRUSTED_PROXIES": "127.0.0.1/32",
     }
     template = Path(__file__).resolve().parents[1] / ".env.production.example"
     lines = [f"{line.split('=', 1)[0]}={replacements[line.split('=', 1)[0]]}"
@@ -57,7 +46,7 @@ def main():
     descriptor = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as output:
         output.write("\n".join(lines) + "\n")
-    print("Private production env created. Verify subnet/route compatibility before deployment.")
+    print("Private native production env created; secrets were not printed.")
 
 
 if __name__ == "__main__":

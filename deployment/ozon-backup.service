@@ -1,0 +1,11 @@
+[Unit]
+Description=Consistent native Ozon DB/uploads backup
+After=postgresql@15-main.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /opt/ozon-production/current/scripts/backup.sh
+TimeoutStartSec=15min
+UMask=0077
+Nice=10
+IOSchedulingClass=idle

@@ -152,3 +152,6 @@ Deployment не выполнять.
 -  какие bootstrap/deployment scripts готовы; 
 -  что нужно от пользователя после аренды VPS; 
 - один первый шаг после SSH login.
+Task 040 supersedes Docker-specific bootstrap/runtime requirements in this historical
+task. Public IPv4 HTTPS, Ozon credential/permission/expiry and Seller Check decisions
+remain unchanged; current native runbook is docs/DEPLOYMENT.md.

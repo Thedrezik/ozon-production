@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Ozon backup (UTC maintenance window)
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+Persistent=true
+Unit=ozon-backup.service
+
+[Install]
+WantedBy=timers.target

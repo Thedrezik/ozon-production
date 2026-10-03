@@ -20,7 +20,6 @@ def generator():
 
 def arguments(monkeypatch, output, host):
     monkeypatch.setattr(sys, "argv", ["init-production-env.py", "--domain", host,
-        "--proxy-subnet", "172.29.40.0/28", "--database-subnet", "172.29.41.0/28",
         "--release", "a" * 40, "--output", str(output)])
 
 
@@ -35,6 +34,9 @@ def test_private_env_valid_and_never_overwritten(generator, tmp_path, monkeypatc
     assert settings.domain == host and settings.app_public_url == f"https://{host}"
     assert settings.ozon_api_key == "" and settings.enabled_optional_features == ""
     Fernet(settings.ozon_credentials_master_key.encode())
+    assert "@127.0.0.1:5432/ozon" in settings.database_url
+    assert settings.ozon_webhook_trusted_proxies == "127.0.0.1/32"
+    assert "BACKEND_IMAGE" not in values and "PROXY_SUBNET" not in values
     stdout = capsys.readouterr().out
     assert all(values[key] not in stdout for key in (
         "APP_SECRET", "POSTGRES_PASSWORD", "OZON_CREDENTIALS_MASTER_KEY"))

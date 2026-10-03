@@ -2,3 +2,7 @@
 Dockerfile text eol=lf
 *.Dockerfile text eol=lf
 *Caddyfile text eol=lf
+deployment/Caddyfile.compose text eol=lf
+*.service text eol=lf
+*.timer text eol=lf
+deployment/*.conf text eol=lf

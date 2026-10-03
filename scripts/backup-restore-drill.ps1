@@ -133,7 +133,7 @@ try {
     Invoke-Docker ($script:ComposeArgs + @('exec', '-T', 'backend', 'sh', '-ec', 'printf %s upload-before-backup > /data/uploads/backup-drill-probe.txt'))
 
     Write-Stage 'Creating PostgreSQL and uploads backup'
-    $backupOutput = @(& $script:BashPath 'scripts/backup.sh')
+    $backupOutput = @(& $script:BashPath 'scripts/backup-compose.sh')
     if ($LASTEXITCODE -ne 0) { throw "backup.sh exited with code $LASTEXITCODE" }
     $backupOutput | ForEach-Object { Write-Host $_ }
     $backupText = $backupOutput -join "`n"
@@ -159,7 +159,7 @@ try {
     Invoke-Docker ($script:ComposeArgs + @('stop', 'backend'))
 
     Write-Stage 'Restoring the isolated drill backup'
-    Invoke-GitBash @('scripts/restore.sh', $script:BackupName, '--yes')
+    Invoke-GitBash @('scripts/restore-compose.sh', $script:BackupName, '--yes')
 
     Write-Stage 'Checking migrations and starting restored backend'
     Invoke-Docker ($script:ComposeArgs + @('run', '--rm', '--no-deps', 'backend', 'alembic', 'upgrade', 'head'))
@@ -176,7 +176,7 @@ try {
     $env:RETENTION_COUNT = '2'
     1..3 | ForEach-Object {
         Start-Sleep -Seconds 1
-        $output = @(& $script:BashPath 'scripts/backup.sh')
+        $output = @(& $script:BashPath 'scripts/backup-compose.sh')
         if ($LASTEXITCODE -ne 0) { throw "Retention backup run $_ failed with code $LASTEXITCODE" }
         $output | ForEach-Object { Write-Host $_ }
     }

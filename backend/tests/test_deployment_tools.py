@@ -47,7 +47,6 @@ def test_drill_guards_resolved_volumes_and_mounts():
 def test_generated_production_env_is_valid_private_and_never_overwritten(tmp_path):
     target = tmp_path / "production.env"
     command = [sys.executable, str(ROOT / "scripts/init-production-env.py"), "--domain", "factory.example.org",
-               "--proxy-subnet", "172.29.40.0/28", "--database-subnet", "172.29.41.0/28",
                "--release", "synthetic-release", "--output", str(target)]
     result = subprocess.run(command, capture_output=True, text=True, check=True)
     # Explicit env values override any existing host secrets without logging them.
@@ -55,13 +54,10 @@ def test_generated_production_env_is_valid_private_and_never_overwritten(tmp_pat
     settings = Settings(_env_file=None, **{key.lower(): value for key, value in values.items()})
     assert settings.app_env == "production" and not settings.ozon_mock_mode
     assert len(values["POSTGRES_PASSWORD"]) == 48
-    assert settings.ozon_webhook_trusted_proxies == "172.29.40.2/32"
+    assert settings.ozon_webhook_trusted_proxies == "127.0.0.1/32"
     assert all(values[key] not in result.stdout for key in ("APP_SECRET", "POSTGRES_PASSWORD", "OZON_CREDENTIALS_MASTER_KEY"))
     original = target.read_bytes()
     assert subprocess.run(command, capture_output=True, check=False).returncode != 0
     assert target.read_bytes() == original
     if os.name == "posix":
         assert target.stat().st_mode & 0o777 == 0o600
-    overlapping = command.copy()
-    overlapping[overlapping.index("--database-subnet") + 1] = "172.29.40.0/28"
-    assert subprocess.run(overlapping, capture_output=True, check=False).returncode != 0

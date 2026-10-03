@@ -3,7 +3,8 @@
 set -Eeuo pipefail
 umask 077
 fail() { echo "$*" >&2; exit 1; }
-[[ $# == 2 ]] || fail 'Usage: sudo bash bootstrap-vps.sh DEPLOY_USER SSH_PUBLIC_KEY_FILE'
+[[ $# == 2 || ( $# == 3 && $3 == --agent-sudo ) ]] || fail 'Usage: sudo bash bootstrap-vps.sh DEPLOY_USER SSH_PUBLIC_KEY_FILE [--agent-sudo]'
+agent_sudo=${3:-}
 deploy_user=$1
 public_key=$2
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || fail 'Requires Linux x86_64.'
@@ -22,41 +23,112 @@ if [[ -n ${SSH_CONNECTION:-} ]]; then ssh_ports+=("${SSH_CONNECTION##* }"); fi
 for port in "${ssh_ports[@]}"; do
   [[ $port =~ ^[0-9]+$ && $port -ge 1 && $port -le 65535 ]] || fail 'Invalid SSH port.'
 done
-# Refuse incompatible Docker installs rather than removing packages/data.
-for package in docker.io docker-compose podman-docker containerd runc; do
-  if [[ $(dpkg-query -W -f='${Status}' "$package" 2>/dev/null || true) == 'install ok installed' ]]; then
-    fail "Review conflicting package $package before bootstrap; nothing removed."
-  fi
-done
+# Native packages only. Debian Python remains untouched; app uses managed 3.12.
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-apt-get install -y ca-certificates curl git openssh-client sudo ufw python3 rsync util-linux
-install -m 0755 -d /etc/apt/keyrings
-if [[ ! -s /etc/apt/keyrings/docker.asc ]]; then
-  curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+apt-get install -y --no-install-recommends postgresql-15 postgresql-client-15 python3 python3-venv ca-certificates curl git openssh-client sudo ufw rsync util-linux xz-utils unzip logrotate
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+uv_version=0.12.20
+uv_asset=uv-x86_64-unknown-linux-gnu.tar.gz
+uv_base="https://releases.astral.sh/github/uv/releases/download/$uv_version"
+curl -fsSL "$uv_base/$uv_asset" -o "$work/$uv_asset"
+curl -fsSL "$uv_base/$uv_asset.sha256" -o "$work/uv.sha256"
+python3 - "$work/$uv_asset" "$work/uv.sha256" <<'PY'
+import hashlib,pathlib,sys
+archive,check=map(pathlib.Path,sys.argv[1:])
+assert hashlib.sha256(archive.read_bytes()).hexdigest() == check.read_text().split()[0]
+PY
+tar -xzf "$work/$uv_asset" -C "$work"
+install -m 755 "$work/uv-x86_64-unknown-linux-gnu/uv" /usr/local/bin/uv
+install -d -m 755 /opt/ozon-production /opt/ozon-production/python
+# Build-only Node/npm. Debian 12 Node 18 cannot satisfy this frontend lockfile.
+node_version=22.23.3
+node_asset="node-v${node_version}-linux-x64.tar.xz"
+node_base="https://nodejs.org/dist/v$node_version"
+if [[ ! -x /opt/ozon-production/node/bin/node ]]; then
+  [[ ! -e /opt/ozon-production/node && ! -L /opt/ozon-production/node ]] || fail 'Review existing Node directory.'
+  curl -fsSL "$node_base/$node_asset" -o "$work/$node_asset"
+  curl -fsSL "$node_base/SHASUMS256.txt" -o "$work/node-checksums"
+  python3 - "$work/$node_asset" "$work/node-checksums" <<'PY'
+import hashlib,pathlib,sys
+archive,check=map(pathlib.Path,sys.argv[1:])
+entries=dict((line.split()[1].lstrip('*'),line.split()[0]) for line in check.read_text().splitlines() if line.strip())
+assert hashlib.sha256(archive.read_bytes()).hexdigest() == entries[archive.name]
+PY
+  mkdir /opt/ozon-production/node
+  tar -xJf "$work/$node_asset" --strip-components=1 -C /opt/ozon-production/node
 fi
-chmod 0644 /etc/apt/keyrings/docker.asc
-repo=$(mktemp)
-trap 'rm -f -- "$repo"' EXIT
-cat > "$repo" <<'APT'
-Types: deb
-URIs: https://download.docker.com/linux/debian
-Suites: bookworm
-Components: stable
-Architectures: amd64
-Signed-By: /etc/apt/keyrings/docker.asc
-APT
-if [[ -e /etc/apt/sources.list.d/docker.list ]]; then
-  fail 'Review existing docker.list to avoid duplicate apt repositories.'
-fi
-if [[ -e /etc/apt/sources.list.d/docker.sources ]]; then
-  cmp -s "$repo" /etc/apt/sources.list.d/docker.sources || fail 'Existing Docker repository differs; review manually.'
-else
-  install -m 0644 "$repo" /etc/apt/sources.list.d/docker.sources
-fi
-apt-get update
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-systemctl enable --now docker
+[[ $(/opt/ozon-production/node/bin/node --version) == "v$node_version" ]] || fail 'Review different installed build Node version.'
+for command in node npm npx; do
+  if [[ -e /usr/local/bin/$command && ! -L /usr/local/bin/$command ]]; then fail "Review existing /usr/local/bin/$command."; fi
+  ln -sfn "/opt/ozon-production/node/bin/$command" "/usr/local/bin/$command"
+done
+export UV_PYTHON_INSTALL_DIR=/opt/ozon-production/python UV_NO_CACHE=1
+uv python install 3.12
+find /opt/ozon-production/python -type d -exec chmod a+rx {} +
+find /opt/ozon-production/python -type f -exec chmod a+r {} +
+# Caddy upstream pinned binary, checksum verified; no Go toolchain required.
+caddy_version=2.11.6
+caddy_asset="caddy_${caddy_version}_linux_amd64.tar.gz"
+caddy_base="https://github.com/caddyserver/caddy/releases/download/v$caddy_version"
+curl -fsSL "$caddy_base/$caddy_asset" -o "$work/$caddy_asset"
+curl -fsSL "$caddy_base/caddy_${caddy_version}_checksums.txt" -o "$work/caddy-checksums"
+python3 - "$work/$caddy_asset" "$work/caddy-checksums" <<'PY'
+import hashlib,pathlib,sys
+archive,check=map(pathlib.Path,sys.argv[1:])
+entries=dict((line.split()[1].lstrip('*'),line.split()[0]) for line in check.read_text().splitlines() if line.strip())
+assert hashlib.sha512(archive.read_bytes()).hexdigest() == entries[archive.name]
+PY
+tar -xzf "$work/$caddy_asset" -C "$work" caddy
+install -m 755 "$work/caddy" /usr/local/bin/caddy
+for service_user in ozon-app caddy; do
+  if ! id "$service_user" >/dev/null 2>&1; then
+    useradd --system --home-dir "/var/lib/$service_user" --shell /usr/sbin/nologin "$service_user"
+  fi
+  [[ $(id -u "$service_user") -ne 0 ]] || fail 'Service user must be unprivileged.'
+done
+install -d -m 755 /var/lib/ozon-production /etc/caddy /opt/ozon-production/releases
+install -d -m 700 /etc/ozon-production /var/lib/ozon-production/private /var/lib/ozon-production/backups
+install -d -m 700 -o ozon-app -g ozon-app /var/lib/ozon-production/uploads
+install -d -m 700 -o caddy -g caddy /var/lib/caddy
+install -d -m 755 /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/ozon.conf <<'CONF'
+[Journal]
+SystemMaxUse=64M
+RuntimeMaxUse=16M
+MaxRetentionSec=7day
+SystemKeepFree=512M
+CONF
+systemctl restart systemd-journald
+# Debian's PostgreSQL logs are separate from journald; replace package rotation.
+cat > /etc/logrotate.d/postgresql-common <<'CONF'
+/var/log/postgresql/*.log {
+    daily
+    rotate 3
+    maxsize 16M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su root root
+}
+CONF
+# Bootstrap is self-contained; full tuning is installed from release on deploy.
+cat > /etc/postgresql/15/main/conf.d/ozon.conf <<'CONF'
+listen_addresses = '127.0.0.1'
+password_encryption = 'scram-sha-256'
+max_connections = 20
+shared_buffers = 64MB
+work_mem = 2MB
+maintenance_work_mem = 32MB
+CONF
+systemctl enable --now postgresql
+systemctl restart postgresql@15-main
+printf 'vm.swappiness=10\n' > /etc/sysctl.d/99-ozon-swappiness.conf
+sysctl -p /etc/sysctl.d/99-ozon-swappiness.conf
+apt-get clean
 if [[ -z $(swapon --show --noheadings) ]]; then
   if awk '$1 !~ /^#/ && $3 == "swap" && $1 != "/swapfile" {found=1} END {exit !found}' /etc/fstab; then
     fail 'Configured inactive swap exists; review/activate it instead of adding swap.'
@@ -91,7 +163,13 @@ if ! id "$deploy_user" >/dev/null 2>&1; then
   adduser --disabled-password --gecos '' "$deploy_user"
 fi
 [[ $(id -u "$deploy_user") -ne 0 ]] || fail 'Deploy user must not be UID 0.'
-usermod -aG sudo,docker "$deploy_user"
+usermod -aG sudo "$deploy_user"
+if [[ $agent_sudo == --agent-sudo ]]; then
+  # Explicit administrative authorization; revoke this file after deployment.
+  printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$deploy_user" > "/etc/sudoers.d/ozon-$deploy_user"
+  chmod 440 "/etc/sudoers.d/ozon-$deploy_user"
+  visudo -cf "/etc/sudoers.d/ozon-$deploy_user"
+fi
 user_home=$(getent passwd "$deploy_user" | cut -d: -f6)
 [[ -d $user_home && ! -L $user_home ]] || fail 'Review deploy home.'
 install -d -m 700 -o "$deploy_user" -g "$deploy_user" "$user_home/.ssh"
@@ -106,7 +184,7 @@ fi
 chmod 600 "$authorized"
 chown "$deploy_user:$deploy_user" "$authorized"
 [[ ! -L /opt/ozon-production ]] || fail 'Review symlink application directory.'
-install -d -m 750 -o "$deploy_user" -g "$deploy_user" /opt/ozon-production
+install -d -m 755 -o "$deploy_user" -g "$deploy_user" /opt/ozon-production/repo
 for port in "${ssh_ports[@]}"; do ufw allow "$port/tcp"; done
 ufw allow 80/tcp
 ufw allow 443/tcp
@@ -114,8 +192,9 @@ ufw default deny incoming
 ufw default allow outgoing
 ufw --force enable
 echo 'Bootstrap complete. Verify a second deploy-user SSH session before closing this one.'
-echo 'Set deploy sudo password locally with: passwd DEPLOY_USER (never send it to an agent).'
+echo 'For agent sudo use the explicit --agent-sudo option; revoke its sudoers file after use.'
 echo 'Existing UFW rules retained; inspect ufw status and provider firewall for extra exposure.'
-docker compose version
+/usr/local/bin/caddy version
+/usr/local/bin/uv --version
 swapon --show
 ufw status verbose
